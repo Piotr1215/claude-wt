@@ -370,10 +370,18 @@ def clean(
                     if current_wt:
                         worktrees.append(current_wt)
 
-                    # Remove claude-wt worktrees
+                    # Remove worktrees - both claude-wt-* branches and those in .claude-wt/worktrees
                     for wt in worktrees:
+                        wt_path = wt.get("path", "")
                         branch_name = wt.get("branch", "")
-                        if branch_name.startswith("claude-wt-"):
+                        
+                        # Check if this is a claude-wt worktree by branch name or path
+                        is_claude_wt = (
+                            branch_name.startswith("claude-wt-") or 
+                            "/.claude-wt/worktrees/" in wt_path
+                        )
+                        
+                        if is_claude_wt:
                             try:
                                 subprocess.run(
                                     [
@@ -383,17 +391,25 @@ def clean(
                                         "worktree",
                                         "remove",
                                         "--force",
-                                        wt["path"],
+                                        wt_path,
                                     ],
                                     check=True,
                                 )
                                 console.print(
-                                    f"  [green]✅ Removed {branch_name}[/green]"
+                                    f"  [green]✅ Removed worktree: {branch_name or wt_path}[/green]"
                                 )
-                            except subprocess.CalledProcessError:
+                            except subprocess.CalledProcessError as e:
                                 console.print(
-                                    f"  [red]❌ Failed to remove {branch_name}[/red]"
+                                    f"  [red]❌ Failed to remove worktree: {branch_name or wt_path}[/red]"
                                 )
+                                # Try to prune if removal failed
+                                try:
+                                    subprocess.run(
+                                        ["git", "-C", str(repo_root), "worktree", "prune"],
+                                        check=True,
+                                    )
+                                except:
+                                    pass
                 except subprocess.CalledProcessError:
                     console.print("  [yellow]No worktrees found[/yellow]")
 
@@ -414,7 +430,7 @@ def clean(
                         check=True,
                     )
                     branches = [
-                        b.strip().lstrip("* ")
+                        b.strip().lstrip("* ").lstrip("+ ")
                         for b in result.stdout.split("\n")
                         if b.strip()
                     ]
@@ -575,6 +591,116 @@ def init():
 
 
 @app.command
+def resume_issue(branch_name: str):
+    """Resume an issue-based worktree session.
+
+    Parameters
+    ----------
+    branch_name : str
+        Issue branch name (e.g., doc-856/fix-stuff)
+    """
+    try:
+        # Get repo root
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        repo_root = Path(result.stdout.strip())
+
+        # Find worktree path
+        wt_path = repo_root / ".claude-wt" / "worktrees" / branch_name.replace("/", "-")
+
+        if not wt_path.exists():
+            console.print(
+                f"[red]Error: Worktree for branch '{branch_name}' not found[/red]"
+            )
+            raise SystemExit(1)
+
+        console.print(
+            f"[yellow]🔄 Resuming session for issue branch:[/yellow] [bold]{branch_name}[/bold]"
+        )
+
+        # Launch Claude with --continue to resume conversation
+        claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+        claude_cmd = [claude_script, "--add-dir", str(repo_root), "--continue"]
+        subprocess.run(claude_cmd, cwd=wt_path)
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]Unexpected error: {e}[/red]")
+        raise SystemExit(1)
+
+
+@app.command
+def clean_issue(branch_name: str):
+    """Delete an issue-based worktree and optionally its branch.
+
+    Parameters
+    ----------
+    branch_name : str
+        Issue branch name to clean (e.g., doc-856/fix-stuff)
+    """
+    try:
+        # Get repo root
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        repo_root = Path(result.stdout.strip())
+        
+        # Find worktree path
+        wt_path = repo_root / ".claude-wt" / "worktrees" / branch_name.replace("/", "-")
+
+        # Remove worktree
+        if wt_path.exists():
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(wt_path),
+                ],
+                check=True,
+            )
+            console.print(f"[green]✅ Removed worktree:[/green] {wt_path}")
+        else:
+            console.print(f"[yellow]⚠️  Worktree for {branch_name} not found[/yellow]")
+
+        # Ask if they want to delete the branch
+        delete_branch = console.input(
+            f"[yellow]Do you want to delete the branch '{branch_name}'? (y/N):[/yellow] "
+        ).lower() == 'y'
+        
+        if delete_branch:
+            try:
+                subprocess.run(
+                    ["git", "-C", str(repo_root), "branch", "-D", branch_name],
+                    check=True,
+                )
+                console.print(f"[green]✅ Deleted branch:[/green] {branch_name}")
+            except subprocess.CalledProcessError:
+                console.print(
+                    f"[yellow]⚠️  Could not delete branch {branch_name} (may be checked out elsewhere)[/yellow]"
+                )
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]Unexpected error: {e}[/red]")
+        raise SystemExit(1)
+
+
+@app.command
 def version():
     """Show version information."""
     console.print("claude-wt 0.1.0")
@@ -672,34 +798,21 @@ This directory must be added to .gitignore to prevent committing worktree data.
             console.print("[yellow]No assigned issues found[/yellow]")
             raise SystemExit(1)
         
-        # Get existing branches to filter out
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "branch", "--format", "%(refname:short)"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        existing_branches = result.stdout.strip().split("\n") if result.stdout.strip() else []
-        
-        # Filter out issues that already have branches
+        # Process all issues without filtering by existing branches
         filtered_issues = []
         for issue in issues:
             # Extract issue ID from URL (e.g., ABC-123)
             issue_id = issue["url"].split("/")[-2].replace("[", "").replace("]", "").lower()
             
-            # Check if any existing branch starts with this issue ID
-            has_branch = any(branch.lower().startswith(issue_id) for branch in existing_branches)
-            
-            if not has_branch:
-                filtered_issues.append({
-                    "id": issue_id,
-                    "title": issue["title"],
-                    "url": issue["url"],
-                    "display": f"{issue['title']} ({issue['url']})"
-                })
+            filtered_issues.append({
+                "id": issue_id,
+                "title": issue["title"],
+                "url": issue["url"],
+                "display": f"{issue['title']} ({issue['url']})"
+            })
         
         if not filtered_issues:
-            console.print("[yellow]No new issues found (all issues already have branches)[/yellow]")
+            console.print("[yellow]No assigned issues found[/yellow]")
             raise SystemExit(1)
         
         # Use fzf to select an issue
@@ -737,7 +850,7 @@ This directory must be added to .gitignore to prevent committing worktree data.
             console.print("[yellow]No branch name provided[/yellow]")
             raise SystemExit(1)
         
-        # Create the full branch name (issue-id/branch-suffix)
+        # Create the branch name (issue-id/branch-suffix)
         issue_branch_name = f"{selected_issue['id']}/{branch_suffix}"
         
         # Switch to main and pull latest
@@ -745,50 +858,55 @@ This directory must be added to .gitignore to prevent committing worktree data.
         subprocess.run(["git", "-C", str(repo_root), "checkout", "main"], check=True)
         subprocess.run(["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True)
         
-        # Create the issue branch
-        subprocess.run(
-            ["git", "-C", str(repo_root), "checkout", "-b", issue_branch_name],
-            check=True,
-        )
+        # Create the issue branch if it doesn't exist (but don't checkout)
+        try:
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    f"refs/heads/{issue_branch_name}",
+                ],
+                check=True,
+            )
+            console.print(f"[yellow]Branch {issue_branch_name} already exists, using it[/yellow]")
+        except subprocess.CalledProcessError:
+            # Branch doesn't exist, create it from main without checking out
+            subprocess.run(
+                ["git", "-C", str(repo_root), "branch", issue_branch_name, "main"],
+                check=True,
+            )
         
-        # Now create a claude-wt worktree from this branch
-        # Generate worktree branch name  
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        wt_branch_name = f"claude-wt-{selected_issue['id']}-{branch_suffix}-{timestamp}"
-        
-        # Create worktree branch
-        subprocess.run(
-            ["git", "-C", str(repo_root), "branch", wt_branch_name, issue_branch_name],
-            check=True,
-        )
-        
-        # Setup worktree path
-        wt_path = repo_root / ".claude-wt" / "worktrees" / wt_branch_name
+        # Setup worktree path - use branch name directly
+        wt_path = repo_root / ".claude-wt" / "worktrees" / issue_branch_name.replace("/", "-")
         wt_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create worktree
-        subprocess.run(
-            [
-                "git",
-                "-C", 
-                str(repo_root),
-                "worktree",
-                "add",
-                "--quiet",
-                str(wt_path),
-                wt_branch_name,
-            ],
-            check=True,
-        )
+        # Create worktree directly from the issue branch
+        if not wt_path.exists():
+            subprocess.run(
+                [
+                    "git",
+                    "-C", 
+                    str(repo_root),
+                    "worktree",
+                    "add",
+                    "--quiet",
+                    str(wt_path),
+                    issue_branch_name,
+                ],
+                check=True,
+            )
         
         # Print helpful info
         panel_content = f"""[dim]Issue:[/dim] [cyan]{selected_issue['id']}[/cyan] - {selected_issue['title']}
-[dim]Issue branch:[/dim] [cyan]{issue_branch_name}[/cyan]
-[dim]Worktree branch:[/dim] [cyan]{wt_branch_name}[/cyan]
+[dim]Branch:[/dim] [cyan]{issue_branch_name}[/cyan]
+[dim]Worktree:[/dim] [cyan]{wt_path.name}[/cyan]
 
-[green]🟢 Resume this session:[/green] [bold]claude-wt resume {selected_issue['id']}-{branch_suffix}-{timestamp}[/bold]
-[blue]🧹 Delete this session:[/blue] [bold]claude-wt clean {selected_issue['id']}-{branch_suffix}-{timestamp}[/bold]
-[red]🧨 Delete all sessions:[/red] [bold]claude-wt clean --all[/bold]"""
+[green]🟢 Resume this session:[/green] [bold]claude-wt resume-issue {selected_issue['id']}/{branch_suffix}[/bold]
+[blue]🧹 Delete this session:[/blue] [bold]claude-wt clean-issue {selected_issue['id']}/{branch_suffix}[/bold]"""
 
         console.print(
             Panel(
@@ -799,10 +917,29 @@ This directory must be added to .gitignore to prevent committing worktree data.
             )
         )
         
-        # Prepare initial query with issue context
-        initial_query = f"I'm working on Linear issue {selected_issue['id']}: {selected_issue['title']}. URL: {selected_issue['url']}"
-        if query:
-            initial_query = f"{initial_query}\n\n{query}"
+        # Fetch full issue details using the get_linear_issue script
+        console.print(f"[cyan]Fetching full issue details for {selected_issue['id']}...[/cyan]")
+        
+        get_issue_script = "/home/decoder/dev/dotfiles/scripts/__get_linear_issue.sh"
+        try:
+            result = subprocess.run(
+                [get_issue_script, selected_issue['id']],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            issue_details = result.stdout
+            
+            # Prepare initial query with full issue context
+            initial_query = f"Here is the Linear issue I'm working on:\n\n{issue_details}"
+            if query:
+                initial_query = f"{initial_query}\n\nAdditional context from user: {query}"
+        except subprocess.CalledProcessError as e:
+            console.print(f"[yellow]Warning: Could not fetch full issue details, using basic info[/yellow]")
+            # Fallback to basic info
+            initial_query = f"I'm working on Linear issue {selected_issue['id']}: {selected_issue['title']}. URL: {selected_issue['url']}"
+            if query:
+                initial_query = f"{initial_query}\n\n{query}"
         
         # Launch Claude with issue context
         claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
