@@ -160,9 +160,9 @@ This directory must be added to .gitignore to prevent committing worktree data.
         )
     )
 
-    # Launch Claude
-    claude_path = shutil.which("claude") or "/Users/jlowin/.claude/local/claude"
-    claude_cmd = [claude_path, "--add-dir", str(repo_root)]
+    # Launch Claude using custom monitor script
+    claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+    claude_cmd = [claude_script, "--add-dir", str(repo_root)]
     if query:
         claude_cmd.extend(["--", query])
 
@@ -224,8 +224,8 @@ def resume(branch_name: str):
         )
 
         # Launch Claude with --continue to resume conversation
-        claude_path = shutil.which("claude") or "/Users/jlowin/.claude/local/claude"
-        claude_cmd = [claude_path, "--add-dir", str(repo_root), "--continue"]
+        claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+        claude_cmd = [claude_script, "--add-dir", str(repo_root), "--continue"]
         subprocess.run(claude_cmd, cwd=wt_path)
 
     except subprocess.CalledProcessError as e:
