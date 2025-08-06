@@ -1,3 +1,5 @@
+import json
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -547,6 +549,244 @@ def init():
 def version():
     """Show version information."""
     console.print("claude-wt 0.1.0")
+
+
+@app.command
+def from_issue(query: str = ""):
+    """Create a worktree from a Linear issue and launch Claude.
+    
+    Parameters
+    ----------
+    query : str
+        Optional query to send to Claude
+    """
+    try:
+        # Check for required environment variables
+        if not os.environ.get("LINEAR_API_KEY"):
+            console.print("[red]Error: LINEAR_API_KEY environment variable not set[/red]")
+            raise SystemExit(1)
+        
+        if not os.environ.get("LINEAR_USER_ID"):
+            console.print("[red]Error: LINEAR_USER_ID environment variable not set[/red]")
+            raise SystemExit(1)
+        
+        # Get repo root
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        repo_root = Path(result.stdout.strip())
+        
+        # Check gitignore setup
+        if not check_gitignore(repo_root):
+            panel_content = """Claude-wt creates worktrees in your repo at [cyan].claude-wt/worktrees[/cyan].
+
+This directory must be added to .gitignore to prevent committing worktree data.
+
+[yellow]→[/yellow] Please run [bold]claude-wt init[/bold] to automatically add .claude-wt/worktrees to .gitignore"""
+
+            console.print(
+                Panel(
+                    panel_content,
+                    title="[bold red]⚠️  Setup Required[/bold red]",
+                    border_style="red",
+                    width=60,
+                )
+            )
+            raise SystemExit(1)
+        
+        # Fetch Linear issues
+        console.print("[cyan]Fetching Linear issues...[/cyan]")
+        
+        graphql_query = {
+            "query": f"""query {{ 
+                user(id: "{os.environ['LINEAR_USER_ID']}") {{ 
+                    id 
+                    name 
+                    assignedIssues(filter: {{ state: {{ name: {{ nin: ["Released", "Canceled"] }} }} }}) {{ 
+                        nodes {{ 
+                            id 
+                            title 
+                            url 
+                        }} 
+                    }} 
+                }} 
+            }}"""
+        }
+        
+        # Use curl to fetch issues (matching the bfi script approach)
+        curl_cmd = [
+            "curl", "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-H", f"Authorization: {os.environ['LINEAR_API_KEY']}",
+            "--data", json.dumps(graphql_query),
+            "https://api.linear.app/graphql"
+        ]
+        
+        result = subprocess.run(curl_cmd, capture_output=True, text=True, check=True)
+        
+        try:
+            response = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            console.print(f"[red]Error: Invalid JSON response from Linear API[/red]")
+            raise SystemExit(1)
+        
+        if "errors" in response:
+            console.print(f"[red]Error from Linear API: {response['errors']}[/red]")
+            raise SystemExit(1)
+        
+        issues = response.get("data", {}).get("user", {}).get("assignedIssues", {}).get("nodes", [])
+        
+        if not issues:
+            console.print("[yellow]No assigned issues found[/yellow]")
+            raise SystemExit(1)
+        
+        # Get existing branches to filter out
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "branch", "--format", "%(refname:short)"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        existing_branches = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        
+        # Filter out issues that already have branches
+        filtered_issues = []
+        for issue in issues:
+            # Extract issue ID from URL (e.g., ABC-123)
+            issue_id = issue["url"].split("/")[-2].replace("[", "").replace("]", "").lower()
+            
+            # Check if any existing branch starts with this issue ID
+            has_branch = any(branch.lower().startswith(issue_id) for branch in existing_branches)
+            
+            if not has_branch:
+                filtered_issues.append({
+                    "id": issue_id,
+                    "title": issue["title"],
+                    "url": issue["url"],
+                    "display": f"{issue['title']} ({issue['url']})"
+                })
+        
+        if not filtered_issues:
+            console.print("[yellow]No new issues found (all issues already have branches)[/yellow]")
+            raise SystemExit(1)
+        
+        # Use fzf to select an issue
+        fzf_input = "\n".join([issue["display"] for issue in filtered_issues])
+        
+        try:
+            result = subprocess.run(
+                ["fzf", "--height", "40%", "--reverse"],
+                input=fzf_input,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            selected_display = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            console.print("[yellow]No issue selected[/yellow]")
+            raise SystemExit(1)
+        
+        # Find the selected issue
+        selected_issue = None
+        for issue in filtered_issues:
+            if issue["display"] == selected_display:
+                selected_issue = issue
+                break
+        
+        if not selected_issue:
+            console.print("[red]Error: Could not find selected issue[/red]")
+            raise SystemExit(1)
+        
+        # Prompt for branch name suffix
+        console.print(f"\n[cyan]Selected issue:[/cyan] {selected_issue['id']}")
+        branch_suffix = console.input("[green]Enter a name for your branch: [/green]")
+        
+        if not branch_suffix:
+            console.print("[yellow]No branch name provided[/yellow]")
+            raise SystemExit(1)
+        
+        # Create the full branch name (issue-id/branch-suffix)
+        issue_branch_name = f"{selected_issue['id']}/{branch_suffix}"
+        
+        # Switch to main and pull latest
+        subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
+        subprocess.run(["git", "-C", str(repo_root), "checkout", "main"], check=True)
+        subprocess.run(["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True)
+        
+        # Create the issue branch
+        subprocess.run(
+            ["git", "-C", str(repo_root), "checkout", "-b", issue_branch_name],
+            check=True,
+        )
+        
+        # Now create a claude-wt worktree from this branch
+        # Generate worktree branch name  
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        wt_branch_name = f"claude-wt-{selected_issue['id']}-{branch_suffix}-{timestamp}"
+        
+        # Create worktree branch
+        subprocess.run(
+            ["git", "-C", str(repo_root), "branch", wt_branch_name, issue_branch_name],
+            check=True,
+        )
+        
+        # Setup worktree path
+        wt_path = repo_root / ".claude-wt" / "worktrees" / wt_branch_name
+        wt_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create worktree
+        subprocess.run(
+            [
+                "git",
+                "-C", 
+                str(repo_root),
+                "worktree",
+                "add",
+                "--quiet",
+                str(wt_path),
+                wt_branch_name,
+            ],
+            check=True,
+        )
+        
+        # Print helpful info
+        panel_content = f"""[dim]Issue:[/dim] [cyan]{selected_issue['id']}[/cyan] - {selected_issue['title']}
+[dim]Issue branch:[/dim] [cyan]{issue_branch_name}[/cyan]
+[dim]Worktree branch:[/dim] [cyan]{wt_branch_name}[/cyan]
+
+[green]🟢 Resume this session:[/green] [bold]claude-wt resume {selected_issue['id']}-{branch_suffix}-{timestamp}[/bold]
+[blue]🧹 Delete this session:[/blue] [bold]claude-wt clean {selected_issue['id']}-{branch_suffix}-{timestamp}[/bold]
+[red]🧨 Delete all sessions:[/red] [bold]claude-wt clean --all[/bold]"""
+
+        console.print(
+            Panel(
+                panel_content,
+                title="[bold cyan]Session Created from Linear Issue[/bold cyan]",
+                border_style="cyan",
+                expand=False,
+            )
+        )
+        
+        # Prepare initial query with issue context
+        initial_query = f"I'm working on Linear issue {selected_issue['id']}: {selected_issue['title']}. URL: {selected_issue['url']}"
+        if query:
+            initial_query = f"{initial_query}\n\n{query}"
+        
+        # Launch Claude with issue context
+        claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+        claude_cmd = [claude_script, "--add-dir", str(repo_root), "--", initial_query]
+        
+        subprocess.run(claude_cmd, cwd=wt_path)
+        
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]Unexpected error: {e}[/red]")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
