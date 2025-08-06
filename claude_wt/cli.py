@@ -15,24 +15,53 @@ console = Console()
 
 
 def check_gitignore(repo_root: Path) -> bool:
-    """Check if .claude-wt/worktrees is in .gitignore"""
-    gitignore_path = repo_root / ".gitignore"
-    if not gitignore_path.exists():
-        return False
-
-    gitignore_content = gitignore_path.read_text()
-    # Check for exact match or pattern that would include it
-    lines = [line.strip() for line in gitignore_content.split("\n")]
-
-    for line in lines:
-        if line in [
-            ".claude-wt/worktrees",
-            ".claude-wt/worktrees/",
-            ".claude-wt/*",
-            ".claude-wt/**",
-        ]:
-            return True
-
+    """Check if .claude-wt/worktrees is in .gitignore (local or global)"""
+    patterns_to_check = [
+        ".claude-wt/worktrees",
+        ".claude-wt/worktrees/",
+        ".claude-wt/*",
+        ".claude-wt/**",
+        ".claude-wt",
+        ".claude",  # This would also match .claude-wt
+    ]
+    
+    # Check local .gitignore
+    local_gitignore = repo_root / ".gitignore"
+    if local_gitignore.exists():
+        gitignore_content = local_gitignore.read_text()
+        lines = [line.strip() for line in gitignore_content.split("\n")]
+        for line in lines:
+            if line in patterns_to_check:
+                return True
+    
+    # Check global .gitignore
+    global_gitignore = Path.home() / ".gitignore"
+    if global_gitignore.exists():
+        gitignore_content = global_gitignore.read_text()
+        lines = [line.strip() for line in gitignore_content.split("\n")]
+        for line in lines:
+            if line in patterns_to_check:
+                return True
+    
+    # Also check if git is configured to use a different global gitignore
+    try:
+        result = subprocess.run(
+            ["git", "config", "--global", "core.excludesfile"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            custom_global_gitignore = Path(result.stdout.strip()).expanduser()
+            if custom_global_gitignore.exists():
+                gitignore_content = custom_global_gitignore.read_text()
+                lines = [line.strip() for line in gitignore_content.split("\n")]
+                for line in lines:
+                    if line in patterns_to_check:
+                        return True
+    except:
+        pass
+    
     return False
 
 
