@@ -1,6 +1,10 @@
-# Install/update claude-wt locally
+# Install/update claude-wt locally as a tool
 install:
     uv tool install -e . --python 3.12 --reinstall
+
+# Install/update claude-wt in development mode (for testing)
+install-dev:
+    uv pip install --editable . --force-reinstall
 
 # Run all tests with pytest
 test:
@@ -40,5 +44,8 @@ commit message:
     git add -A
     git commit -m "{{message}}"
 
-# Install and test
+# Install as tool and test
 update: install test
+
+# Install in dev mode and test
+update-dev: install-dev test
