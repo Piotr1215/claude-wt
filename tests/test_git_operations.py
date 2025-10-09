@@ -114,6 +114,7 @@ branch main
     @patch('claude_wt.cli.subprocess.run')
     def test_clean_all_removes_all_claude_worktrees(self, mock_run):
         """Test that clean --all removes all claude-wt worktrees."""
+        # Test with external worktrees in sibling directory
         worktree_output = """worktree /home/user/repo-worktrees/claude-wt-feature1
 HEAD abc123
 branch claude-wt-feature1
@@ -284,3 +285,44 @@ branch main
 
         # No file operations should have occurred
         assert mock_run.call_count == 1  # Only git rev-parse
+
+    @patch('claude_wt.cli.subprocess.run')
+    def test_clean_identifies_external_worktrees(self, mock_run):
+        """Test that clean correctly identifies external worktrees in sibling directories."""
+        # Mixed worktree output with external and non-claude worktrees
+        worktree_output = """worktree /home/user/myproject-worktrees/claude-wt-test
+HEAD abc123
+branch claude-wt-test
+
+worktree /home/user/other-project/feature
+HEAD def456
+branch feature/something
+
+worktree /home/user/myproject
+HEAD ghi789
+branch main
+"""
+
+        mock_run.side_effect = [
+            # git rev-parse --show-toplevel
+            Mock(stdout="/home/user/myproject", returncode=0),
+            # git worktree list --porcelain
+            Mock(stdout=worktree_output, returncode=0),
+            # git worktree remove for claude-wt-test (should be called)
+            Mock(returncode=0),
+            # git branch --list claude-wt-*
+            Mock(stdout="  claude-wt-test\n", returncode=0),
+            # git branch -D for claude-wt-test
+            Mock(returncode=0),
+        ]
+
+        clean(branch_name="", all=True)
+
+        # Verify that only the claude-wt worktree was targeted for removal
+        calls = mock_run.call_args_list
+        remove_calls = [call for call in calls if "worktree" in str(call) and "remove" in str(call)]
+
+        # Should have exactly 1 worktree remove call
+        assert len(remove_calls) == 1
+        # And it should be for the external claude-wt worktree
+        assert "myproject-worktrees/claude-wt-test" in str(remove_calls[0])

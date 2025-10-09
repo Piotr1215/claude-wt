@@ -433,9 +433,10 @@ def clean(
                         branch_name = wt.get("branch", "")
                         
                         # Check if this is a claude-wt worktree by branch name or path
+                        # Check for external worktrees in sibling directory
                         is_claude_wt = (
-                            branch_name.startswith("claude-wt-") or 
-                            "/.claude-wt/worktrees/" in wt_path
+                            branch_name.startswith("claude-wt-") or
+                            "-worktrees/claude-wt-" in wt_path
                         )
                         
                         if is_claude_wt:
