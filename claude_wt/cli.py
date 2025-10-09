@@ -15,6 +15,58 @@ app = App(help="Claude worktree management CLI")
 console = Console()
 
 
+def get_worktree_base(repo_root: Path) -> Path:
+    """Get the external worktree base directory (sibling to repo)."""
+    repo_name = repo_root.name
+    return repo_root.parent / f"{repo_name}-worktrees"
+
+
+def create_worktree_context(wt_path: Path, issue_id: str, branch_name: str, repo_root: Path):
+    """Create a CLAUDE.md file specific to this worktree."""
+    claude_md = wt_path / "CLAUDE.md"
+    repo_name = repo_root.name
+
+    content = f"""# Worktree Context
+
+**CRITICAL: You are working in a Git worktree, NOT the main repository!**
+
+## Location Information
+- **Current Worktree Path**: `{wt_path}`
+- **Main Repository**: `{repo_root}`
+- **Issue**: {issue_id}
+- **Branch**: `{branch_name}`
+
+## Important Notes
+- This is an ISOLATED worktree for issue {issue_id}
+- All changes are on branch `{branch_name}`
+- You are NOT in the main repository
+- Run ALL commands from THIS worktree directory
+
+## Common Commands
+```bash
+# Check your current location
+pwd  # Should show: {wt_path}
+
+# Commit changes
+git add .
+git commit -m "your message"
+
+# Push to remote
+git push origin {branch_name}
+
+# See main repo (DO NOT edit there!)
+ls {repo_root}
+```
+
+## Remember
+You are working in the worktree at:
+{wt_path}
+
+This is completely separate from the main repo. All your work here is isolated to the {branch_name} branch.
+"""
+    claude_md.write_text(content)
+
+
 def check_gitignore(repo_root: Path) -> bool:
     """Check if .claude-wt/worktrees is in .gitignore (local or global)"""
     patterns_to_check = [
@@ -708,6 +760,271 @@ def version():
 
 
 @app.command
+def linear_issue(
+    issue_id: str,
+    repo_path: str = ".",
+    interactive: bool = True,
+    session_name: str = None,
+):
+    """
+    Smart Linear issue handler for taskwarrior integration.
+
+    This command handles ALL the complex logic:
+    1. Checks for existing branches/worktrees
+    2. Prompts for selection or new branch name (if interactive)
+    3. Creates worktree in sibling directory
+    4. Returns worktree path for automation
+
+    Parameters
+    ----------
+    issue_id : str
+        Linear issue ID (e.g., DOC-975)
+    repo_path : str
+        Repository path (defaults to current directory)
+    interactive : bool
+        Enable interactive prompts (default True)
+    session_name : str
+        Optional tmux session name to create
+    """
+    try:
+        # Get repo root
+        if repo_path == ".":
+            result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            repo_root = Path(result.stdout.strip())
+        else:
+            repo_root = Path(repo_path).resolve()
+
+        repo_name = repo_root.name
+
+        # External worktrees go to sibling directory
+        worktree_base = get_worktree_base(repo_root)
+        worktree_base.mkdir(parents=True, exist_ok=True)
+
+        # Normalize issue ID
+        issue_prefix = issue_id.lower().replace('doc-', '').replace('/', '-')
+        issue_prefix = f"doc-{issue_prefix}"  # Ensure it starts with doc-
+
+        # Get existing branches for this issue
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "branch", "-a"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        existing_branches = []
+        for line in result.stdout.split('\n'):
+            branch = line.strip().lstrip('* ').lstrip('+ ').strip()
+            if branch and not branch.startswith('remotes/'):
+                if '/' in branch and branch.startswith(issue_prefix + '/'):
+                    existing_branches.append(branch)
+
+        # Get existing worktrees for this issue
+        existing_worktrees = []
+        if worktree_base.exists():
+            for entry in worktree_base.iterdir():
+                if entry.is_dir() and entry.name.startswith(issue_prefix + '-'):
+                    existing_worktrees.append(entry.name)
+
+        worktree_path = None
+        branch_name = None
+
+        # Interactive selection
+        if interactive and (existing_branches or existing_worktrees):
+            # Use zenity for GUI selection
+            command = [
+                "zenity", "--list",
+                f"--title=Branches/Worktrees for {issue_id}",
+                "--text=Select an existing branch/worktree or create new:",
+                "--column=Option",
+                "--width=500", "--height=400"
+            ]
+
+            # Add existing worktrees
+            for wt in existing_worktrees:
+                command.append(f"[worktree exists] {wt}")
+
+            # Add existing branches without worktrees
+            for branch in existing_branches:
+                wt_name = branch.replace('/', '-')
+                if wt_name not in existing_worktrees:
+                    command.append(f"[create worktree] {branch}")
+
+            command.append("Create new branch")
+
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, check=True)
+                selection = result.stdout.strip()
+
+                if selection.startswith("[worktree exists]"):
+                    # Use existing worktree
+                    wt_name = selection.replace("[worktree exists] ", "").strip()
+                    worktree_path = worktree_base / wt_name
+                    # Extract branch name from worktree name
+                    branch_name = wt_name.replace(issue_prefix + '-', '')
+                    branch_name = f"{issue_prefix}/{branch_name}"
+
+                elif selection.startswith("[create worktree]"):
+                    # Create worktree for existing branch
+                    branch_name = selection.replace("[create worktree] ", "").strip()
+
+                elif selection == "Create new branch":
+                    # Prompt for new branch name
+                    branch_name = None
+
+                else:
+                    # User cancelled
+                    raise SystemExit(1)
+
+            except subprocess.CalledProcessError:
+                # User cancelled
+                raise SystemExit(1)
+
+        # If we need a new branch name
+        if not branch_name and interactive:
+            # Prompt for branch name using zenity
+            try:
+                result = subprocess.run(
+                    [
+                        "zenity",
+                        "--entry",
+                        "--title=Create New Branch",
+                        f"--text=Creating worktree for issue {issue_id}\\nEnter branch name suffix:",
+                        "--width=400"
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+
+                branch_suffix = result.stdout.strip()
+                if not branch_suffix:
+                    raise SystemExit(1)
+
+                branch_name = f"{issue_prefix}/{branch_suffix}"
+
+            except subprocess.CalledProcessError:
+                # User cancelled
+                raise SystemExit(1)
+
+        elif not branch_name:
+            # Non-interactive: create with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            branch_name = f"{issue_prefix}/{timestamp}"
+
+        # Create worktree if needed
+        if not worktree_path:
+            # Ensure we're on main and up to date
+            subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo_root), "checkout", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo_root), "pull", "--ff-only"], check=True, capture_output=True)
+
+            # Check if branch exists
+            result = subprocess.run(
+                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{branch_name}"],
+                capture_output=True,
+            )
+
+            if result.returncode != 0:
+                # Create new branch
+                subprocess.run(
+                    ["git", "-C", str(repo_root), "branch", branch_name, "main"],
+                    check=True,
+                )
+
+            # Create worktree
+            wt_name = branch_name.replace('/', '-')
+            worktree_path = worktree_base / wt_name
+
+            if not worktree_path.exists():
+                subprocess.run(
+                    [
+                        "git", "-C", str(repo_root),
+                        "worktree", "add", str(worktree_path), branch_name
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+
+        # Create worktree-specific CLAUDE.md
+        create_worktree_context(worktree_path, issue_id, branch_name, repo_root)
+
+        # Output path for automation (to stdout)
+        print(str(worktree_path))
+
+        # If session_name provided, create tmux session and launch Claude
+        if session_name:
+            # Check if session exists
+            check_session = subprocess.run(
+                ['tmux', 'has-session', '-t', session_name],
+                capture_output=True
+            )
+
+            if check_session.returncode != 0:
+                # Create new tmux session
+                subprocess.run([
+                    'tmux', 'new-session', '-d', '-s', session_name,
+                    '-c', str(worktree_path), '-n', 'work'
+                ])
+
+                # Split window horizontally
+                subprocess.run(['tmux', 'split-window', '-t', f'{session_name}:work', '-h', '-c', str(worktree_path)])
+
+                # Select the right pane for Claude
+                subprocess.run(['tmux', 'select-pane', '-t', f'{session_name}:work.1'])
+
+                # Get issue details and launch Claude
+                get_issue_script = "/home/decoder/dev/dotfiles/scripts/__get_linear_issue.sh"
+                claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+
+                try:
+                    # Get issue details
+                    result = subprocess.run(
+                        [get_issue_script, issue_id],
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    issue_details = result.stdout
+
+                    # Create temp file with context
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                        f.write(f"IMPORTANT: You are in a worktree at {worktree_path}\n\n")
+                        f.write(f"Linear issue {issue_id}:\n\n{issue_details}")
+                        temp_file = f.name
+
+                    # Launch Claude
+                    claude_cmd = f"{claude_script} --add-dir {worktree_path} -- \"$(cat {temp_file})\""
+                    subprocess.run(['tmux', 'send-keys', '-t', f'{session_name}:work.1', claude_cmd, 'Enter'])
+
+                    # Clean up temp file
+                    subprocess.Popen(['sh', '-c', f'sleep 2 && rm {temp_file}'])
+
+                except subprocess.CalledProcessError:
+                    # Launch Claude without issue details
+                    claude_cmd = f"{claude_script} --add-dir {worktree_path} -- \"Working on issue {issue_id} in worktree at {worktree_path}\""
+                    subprocess.run(['tmux', 'send-keys', '-t', f'{session_name}:work.1', claude_cmd, 'Enter'])
+
+                # Switch to session
+                subprocess.run(['tmux', 'switch-client', '-t', session_name], capture_output=True)
+
+        return worktree_path
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error: {e}[/red]", file=sys.stderr)
+        raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]Unexpected error: {e}[/red]", file=sys.stderr)
+        raise SystemExit(1)
+
+
+@app.command
 def from_issue(query: str = ""):
     """Create a worktree from a Linear issue and launch Claude.
     
@@ -959,7 +1276,10 @@ This directory must be added to .gitignore to prevent committing worktree data.
 @app.command
 def from_issue_noninteractive(issue_id: str, branch_name: str, query: str = ""):
     """Create a worktree from a Linear issue ID non-interactively.
-    
+
+    DEPRECATED: Use 'linear_issue' command instead with --no-interactive flag.
+    This command is kept for backward compatibility.
+
     Parameters
     ----------
     issue_id : str
@@ -978,20 +1298,15 @@ def from_issue_noninteractive(issue_id: str, branch_name: str, query: str = ""):
             check=True,
         )
         repo_root = Path(result.stdout.strip())
-        
-        # Check gitignore setup
-        if not check_gitignore(repo_root):
-            console.print("[red]Error: .claude-wt/worktrees not in .gitignore. Run 'claude-wt init' first[/red]")
-            raise SystemExit(1)
-        
+
         # Create the branch name (issue-id/branch-suffix)
         issue_branch_name = f"{issue_id.lower()}/{branch_name}"
-        
+
         # Switch to main and pull latest
-        subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
-        subprocess.run(["git", "-C", str(repo_root), "checkout", "main"], check=True)
-        subprocess.run(["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True)
-        
+        subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True, capture_output=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "-C", str(repo_root), "checkout", "main"], check=True, capture_output=True, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True, capture_output=True, stderr=subprocess.DEVNULL)
+
         # Create the issue branch if it doesn't exist
         try:
             subprocess.run(
@@ -1005,25 +1320,28 @@ def from_issue_noninteractive(issue_id: str, branch_name: str, query: str = ""):
                     f"refs/heads/{issue_branch_name}",
                 ],
                 check=True,
+                capture_output=True,
             )
-            console.print(f"[yellow]Branch {issue_branch_name} already exists, using it[/yellow]")
+            console.print(f"[yellow]Branch {issue_branch_name} already exists, using it[/yellow]", file=sys.stderr)
         except subprocess.CalledProcessError:
             # Branch doesn't exist, create it from main
             subprocess.run(
                 ["git", "-C", str(repo_root), "branch", issue_branch_name, "main"],
                 check=True,
+                capture_output=True,
             )
-        
-        # Setup worktree path
-        wt_path = repo_root / ".claude-wt" / "worktrees" / issue_branch_name.replace("/", "-")
-        wt_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
+        # Setup external worktree path in sibling directory
+        worktree_base = get_worktree_base(repo_root)
+        worktree_base.mkdir(parents=True, exist_ok=True)
+        wt_path = worktree_base / issue_branch_name.replace("/", "-")
+
         # Create worktree if it doesn't exist
         if not wt_path.exists():
             subprocess.run(
                 [
                     "git",
-                    "-C", 
+                    "-C",
                     str(repo_root),
                     "worktree",
                     "add",
@@ -1032,18 +1350,22 @@ def from_issue_noninteractive(issue_id: str, branch_name: str, query: str = ""):
                     issue_branch_name,
                 ],
                 check=True,
+                capture_output=True,
             )
-            console.print(f"[green]Created worktree at {wt_path}[/green]")
+            console.print(f"[green]Created worktree at {wt_path}[/green]", file=sys.stderr)
         else:
-            console.print(f"[yellow]Worktree already exists at {wt_path}[/yellow]")
-        
+            console.print(f"[yellow]Worktree already exists at {wt_path}[/yellow]", file=sys.stderr)
+
+        # Create worktree-specific CLAUDE.md
+        create_worktree_context(wt_path, issue_id, issue_branch_name, repo_root)
+
         # Output the worktree path for the hook to use
         # This is the only output that should go to stdout for the hook to parse
         print(str(wt_path))
-        
+
         # Don't launch Claude here - let the hook handle launching the tmuxinator session
         # which will set up the proper environment
-        
+
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Error: {e}[/red]", file=sys.stderr)
         raise SystemExit(1)
