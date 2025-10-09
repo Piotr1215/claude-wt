@@ -1,5 +1,9 @@
 # Claude-Worktree
 
+[![CI](https://github.com/anthropics/claude-wt/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropics/claude-wt/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/anthropics/claude-wt/branch/main/graph/badge.svg)](https://codecov.io/gh/anthropics/claude-wt)
+[![PyPI version](https://badge.fury.io/py/claude-wt.svg)](https://badge.fury.io/py/claude-wt)
+
 Run multiple Claude Code instances in parallel without stepping on each other. This CLI creates isolated git worktrees for each Claude session, so you can work on different features simultaneously while keeping your main branch clean.
 
 *Inspired by a script from [aaazzam](https://github.com/aaazzam).*

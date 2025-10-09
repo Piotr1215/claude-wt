@@ -208,9 +208,10 @@ This directory must be added to .gitignore to prevent committing worktree data.
             check=True,
         )
 
-    # Setup worktree path
-    wt_path = repo_root / ".claude-wt" / "worktrees" / branch_name
-    wt_path.parent.mkdir(parents=True, exist_ok=True)
+    # Setup external worktree path in sibling directory
+    worktree_base = get_worktree_base(repo_root)
+    worktree_base.mkdir(parents=True, exist_ok=True)
+    wt_path = worktree_base / branch_name
 
     # Create worktree if needed
     if not wt_path.exists():
@@ -227,6 +228,9 @@ This directory must be added to .gitignore to prevent committing worktree data.
             ],
             check=True,
         )
+
+    # Create worktree context file
+    create_worktree_context(wt_path, f"claude-wt-{suffix}", branch_name, repo_root)
 
     # Print helpful info
     panel_content = f"""[dim]Source branch:[/dim] [cyan]{source_branch}[/cyan]
