@@ -25,8 +25,12 @@ class TestGitOperations:
     """Test git-related operations."""
 
     @patch('claude_wt.cli.subprocess.run')
-    def test_new_creates_worktree_with_branch(self, mock_run):
+    @patch('claude_wt.cli.os.environ.get')
+    def test_new_creates_worktree_with_branch(self, mock_environ, mock_run):
         """Test that 'new' command creates a worktree and branch."""
+        # Mock TMUX env var to simulate being in tmux
+        mock_environ.return_value = "tmux_session"
+
         # Mock git commands
         mock_run.side_effect = [
             # git rev-parse --show-toplevel
@@ -44,6 +48,10 @@ class TestGitOperations:
             # git branch creation
             Mock(returncode=0),
             # git worktree add
+            Mock(returncode=0),
+            # tmux display-message to get window ID
+            Mock(stdout="@1", returncode=0),
+            # tmux set-option for window default-path
             Mock(returncode=0),
             # Launch Claude script
             Mock(returncode=0),
@@ -184,8 +192,12 @@ branch main
         assert any("worktree" in str(call) and "list" in str(call) for call in calls)
 
     @patch('claude_wt.cli.subprocess.run')
-    def test_handles_existing_branch(self, mock_run):
+    @patch('claude_wt.cli.os.environ.get')
+    def test_handles_existing_branch(self, mock_environ, mock_run):
         """Test that new command handles existing branch gracefully."""
+        # Mock TMUX env var
+        mock_environ.return_value = "tmux_session"
+
         mock_run.side_effect = [
             # git rev-parse --show-toplevel
             Mock(stdout="/home/user/repo", returncode=0),
@@ -200,6 +212,10 @@ branch main
             # git show-ref (branch exists)
             Mock(returncode=0),
             # git worktree add (no branch creation needed)
+            Mock(returncode=0),
+            # tmux display-message to get window ID
+            Mock(stdout="@1", returncode=0),
+            # tmux set-option for window default-path
             Mock(returncode=0),
             # Launch Claude script
             Mock(returncode=0),

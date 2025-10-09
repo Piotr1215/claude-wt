@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/anthropics/claude-wt/branch/main/graph/badge.svg)](https://codecov.io/gh/anthropics/claude-wt)
 [![PyPI version](https://badge.fury.io/py/claude-wt.svg)](https://badge.fury.io/py/claude-wt)
 
-Run multiple Claude Code instances in parallel without stepping on each other. This CLI creates isolated git worktrees for each Claude session, so you can work on different features simultaneously while keeping your main branch clean.
+Run multiple Claude Code instances in parallel without stepping on each other. **Built for tmux users.** This CLI creates isolated git worktrees for each Claude session, so you can work on different features simultaneously while keeping your main branch clean.
 
 *Inspired by a script from [aaazzam](https://github.com/aaazzam).*
 
@@ -106,6 +106,30 @@ task start <id>
 
 The included Taskwarrior hook (`taskwarrior-hook-simple.py`) automatically handles worktree creation and Claude session management.
 
+## Tmux Integration
+
+Claude-wt is designed for tmux power users. When you create a new worktree from within tmux:
+
+- **Dedicated tmux session**: Creates a new tmux session named `wt-{name}` for each worktree
+- **Automatic session switching**: Switches you to the new session immediately
+- **Correct working directory**: The entire session runs in the worktree directory
+- **All panes/windows start in the right place**: Any new panes or windows you create will be in the worktree
+
+Example workflow:
+```bash
+# Create a new worktree (from within tmux)
+uvx claude-wt new "implement authentication" --name auth
+
+# This automatically:
+# 1. Creates worktree at ../repo-worktrees/claude-wt-auth/
+# 2. Creates tmux session "wt-auth" with that as working directory
+# 3. Launches Claude in the session
+# 4. Switches you to the new session
+
+# Later, you can switch back to this session:
+tmux switch-client -t wt-auth
+```
+
 ## How It Works
 
 Think of it like having multiple parallel universes for your code:
@@ -113,7 +137,8 @@ Think of it like having multiple parallel universes for your code:
 1. **Branch Creation** → Each session gets its own branch (`claude-wt-{timestamp}` or your custom name)
 2. **Worktree Setup** → Creates a separate directory in `{repo-name}-worktrees/` sibling directory so files don't conflict
 3. **Claude Launch** → Starts Claude in the isolated environment with full repo access
-4. **Session Management** → Resume, list, and clean up sessions effortlessly
+4. **Tmux Integration** → Automatically sets up your tmux session to work in the worktree
+5. **Session Management** → Resume, list, and clean up sessions effortlessly
 
 ## Why You'll Love This
 

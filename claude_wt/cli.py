@@ -123,6 +123,8 @@ def new(
     query: str = "",
     branch: str = "",
     name: str = "",
+    no_pull: bool = False,
+    print_path: bool = False,
 ):
     """Create a new worktree and launch Claude.
 
@@ -134,6 +136,10 @@ def new(
         Source branch to create worktree from
     name : str
         Name suffix for the worktree branch
+    no_pull : bool
+        Skip pulling latest changes (useful when you have uncommitted changes)
+    print_path : bool
+        Print worktree path to stdout for shell integration
     """
     # Get repo root
     result = subprocess.run(
@@ -174,14 +180,20 @@ This directory must be added to .gitignore to prevent committing worktree data.
         )
         source_branch = result.stdout.strip()
 
-    # Sync with origin
-    subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
-    subprocess.run(
-        ["git", "-C", str(repo_root), "switch", "--quiet", source_branch], check=True
-    )
-    subprocess.run(
-        ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True
-    )
+    # Sync with origin (unless --no-pull is specified)
+    if not no_pull:
+        subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo_root), "switch", "--quiet", source_branch], check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True
+        )
+    else:
+        # Just ensure we're on the source branch
+        subprocess.run(
+            ["git", "-C", str(repo_root), "switch", "--quiet", source_branch], check=True
+        )
 
     # Generate worktree branch name
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -232,6 +244,11 @@ This directory must be added to .gitignore to prevent committing worktree data.
     # Create worktree context file
     create_worktree_context(wt_path, f"claude-wt-{suffix}", branch_name, repo_root)
 
+    # If print_path is set, just output the path for shell integration
+    if print_path:
+        print(str(wt_path))
+        return
+
     # Print helpful info
     panel_content = f"""[dim]Source branch:[/dim] [cyan]{source_branch}[/cyan]
 
@@ -248,13 +265,58 @@ This directory must be added to .gitignore to prevent committing worktree data.
         )
     )
 
-    # Launch Claude using custom monitor script
-    claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
-    claude_cmd = [claude_script, "--add-dir", str(repo_root)]
-    if query:
-        claude_cmd.extend(["--", query])
+    # Check if we're in tmux and create a new session
+    in_tmux = os.environ.get("TMUX")
 
-    subprocess.run(claude_cmd, cwd=wt_path)
+    if in_tmux:
+        # Create a new tmux session for this worktree
+        session_name = f"wt-{suffix}"
+
+        try:
+            # Check if session already exists
+            check_session = subprocess.run(
+                ['tmux', 'has-session', '-t', session_name],
+                capture_output=True
+            )
+
+            if check_session.returncode != 0:
+                # Create new tmux session with worktree as working directory
+                subprocess.run([
+                    'tmux', 'new-session', '-d', '-s', session_name,
+                    '-c', str(wt_path)
+                ], check=True)
+
+                console.print(f"[cyan]Created tmux session:[/cyan] {session_name}")
+                console.print(f"[dim]Session working directory:[/dim] {wt_path}")
+
+                # Launch Claude in the new session
+                claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+                claude_cmd = f"{claude_script} --add-dir {str(repo_root)}"
+                if query:
+                    claude_cmd += f' -- "{query}"'
+
+                # Send command to the new session
+                subprocess.run(['tmux', 'send-keys', '-t', session_name, claude_cmd, 'Enter'])
+
+            # Switch to the new session
+            subprocess.run(['tmux', 'switch-client', '-t', session_name])
+
+            console.print(f"[green]Switched to tmux session:[/green] {session_name}")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[yellow]Warning: Could not create/switch to tmux session: {e}[/yellow]")
+            # Fall back to launching Claude in current directory
+            claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+            claude_cmd = [claude_script, "--add-dir", str(repo_root)]
+            if query:
+                claude_cmd.extend(["--", query])
+            subprocess.run(claude_cmd, cwd=wt_path)
+    else:
+        # Not in tmux, just launch Claude normally
+        claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+        claude_cmd = [claude_script, "--add-dir", str(repo_root)]
+        if query:
+            claude_cmd.extend(["--", query])
+        subprocess.run(claude_cmd, cwd=wt_path)
 
 
 @app.command
