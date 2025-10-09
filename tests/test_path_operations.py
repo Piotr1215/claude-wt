@@ -1,15 +1,15 @@
 """Tests for path operations in claude-wt."""
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
+
 import os
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from claude_wt.cli import get_worktree_base, create_worktree_context, check_gitignore
+from claude_wt.cli import check_gitignore, create_worktree_context, get_worktree_base
 
 
 class TestPathOperations:
@@ -72,7 +72,7 @@ class TestPathOperations:
         assert "Old content" not in content
         assert "NEW-123" in content
 
-    @patch('claude_wt.cli.Path')
+    @patch("claude_wt.cli.Path")
     def test_check_gitignore_finds_pattern_in_local(self, mock_path):
         """Test check_gitignore finds patterns in local .gitignore."""
         mock_repo = Mock()
@@ -89,7 +89,7 @@ class TestPathOperations:
 
         assert result is True
 
-    @patch('claude_wt.cli.Path')
+    @patch("claude_wt.cli.Path")
     def test_check_gitignore_finds_pattern_in_global(self, mock_path):
         """Test check_gitignore finds patterns in global .gitignore."""
         mock_repo = Mock()
@@ -101,14 +101,16 @@ class TestPathOperations:
         mock_global_gitignore.exists.return_value = True
         mock_global_gitignore.read_text.return_value = ".claude-wt/*"
 
-        mock_path.home.return_value.__truediv__ = Mock(return_value=mock_global_gitignore)
+        mock_path.home.return_value.__truediv__ = Mock(
+            return_value=mock_global_gitignore
+        )
 
         result = check_gitignore(mock_repo)
 
         assert result is True
 
-    @patch('claude_wt.cli.Path.home')
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.Path.home")
+    @patch("claude_wt.cli.subprocess.run")
     def test_check_gitignore_returns_false_when_not_found(self, mock_run, mock_home):
         """Test check_gitignore returns False when pattern not found."""
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,31 +1,26 @@
 """Tests for git operations in claude-wt."""
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call
-import subprocess
-import tempfile
+
 import os
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from claude_wt.cli import (
-    get_worktree_base,
-    create_worktree_context,
-    check_gitignore,
-    new,
-    resume,
-    clean,
-    list as list_worktrees
-)
+from claude_wt.cli import clean, new, resume
+from claude_wt.cli import list as list_worktrees
 
 
 class TestGitOperations:
     """Test git-related operations."""
 
-    @patch('claude_wt.cli.subprocess.run')
-    @patch('claude_wt.cli.os.environ.get')
+    @patch("claude_wt.cli.subprocess.run")
+    @patch("claude_wt.cli.os.environ.get")
     def test_new_creates_worktree_with_branch(self, mock_environ, mock_run):
         """Test that 'new' command creates a worktree and branch."""
         # Mock TMUX env var to simulate being in tmux
@@ -57,11 +52,11 @@ class TestGitOperations:
             Mock(returncode=0),
         ]
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists') as mock_exists:
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists") as mock_exists:
                 mock_exists.return_value = False
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
                         # This would normally exit, so we catch the SystemExit
                         new(query="test query", name="test-feature")
 
@@ -70,7 +65,7 @@ class TestGitOperations:
         assert any("rev-parse" in str(call) for call in calls)
         assert any("worktree" in str(call) and "add" in str(call) for call in calls)
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_resume_finds_existing_worktree(self, mock_run):
         """Test that resume finds and uses existing worktree."""
         worktree_output = """worktree /home/user/repo-worktrees/claude-wt-test
@@ -91,7 +86,7 @@ branch main
             Mock(returncode=0),
         ]
 
-        with patch('claude_wt.cli.Path.exists', return_value=True):
+        with patch("claude_wt.cli.Path.exists", return_value=True):
             # The resume function launches Claude and returns normally
             resume("test")
 
@@ -99,7 +94,7 @@ branch main
         calls = mock_run.call_args_list
         assert len(calls) == 3  # rev-parse, worktree list, and Claude launch
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_clean_removes_worktree_and_branch(self, mock_run):
         """Test that clean removes worktree and branch."""
         mock_run.side_effect = [
@@ -111,7 +106,7 @@ branch main
             Mock(returncode=0),
         ]
 
-        with patch('claude_wt.cli.Path.exists', return_value=True):
+        with patch("claude_wt.cli.Path.exists", return_value=True):
             clean(branch_name="test", all=False)
 
         # Verify both worktree remove and branch delete were called
@@ -119,7 +114,7 @@ branch main
         assert any("worktree" in str(call) and "remove" in str(call) for call in calls)
         assert any("branch" in str(call) and "-D" in str(call) for call in calls)
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_clean_all_removes_all_claude_worktrees(self, mock_run):
         """Test that clean --all removes all claude-wt worktrees."""
         # Test with external worktrees in sibling directory
@@ -160,7 +155,7 @@ branch main
         remove_calls = [call for call in calls if "remove" in str(call)]
         assert len(remove_calls) >= 2  # At least 2 worktrees removed
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_list_shows_claude_worktrees(self, mock_run):
         """Test that list command shows only claude-wt worktrees."""
         worktree_output = """worktree /home/user/repo-worktrees/claude-wt-test
@@ -183,7 +178,7 @@ branch main
             Mock(stdout=worktree_output, returncode=0),
         ]
 
-        with patch('claude_wt.cli.Path.exists', return_value=True):
+        with patch("claude_wt.cli.Path.exists", return_value=True):
             # This prints to console, so we just verify it doesn't error
             list_worktrees()
 
@@ -191,8 +186,8 @@ branch main
         calls = mock_run.call_args_list
         assert any("worktree" in str(call) and "list" in str(call) for call in calls)
 
-    @patch('claude_wt.cli.subprocess.run')
-    @patch('claude_wt.cli.os.environ.get')
+    @patch("claude_wt.cli.subprocess.run")
+    @patch("claude_wt.cli.os.environ.get")
     def test_handles_existing_branch(self, mock_environ, mock_run):
         """Test that new command handles existing branch gracefully."""
         # Mock TMUX env var
@@ -221,21 +216,28 @@ branch main
             Mock(returncode=0),
         ]
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
                         new(query="test", name="existing")
 
         # Verify branch creation was skipped (show-ref succeeded)
         calls = mock_run.call_args_list
-        branch_create_calls = [call for call in calls if "branch" in str(call) and "claude-wt-existing" in str(call)]
+        branch_create_calls = [
+            call
+            for call in calls
+            if "branch" in str(call) and "claude-wt-existing" in str(call)
+        ]
         # Should only be show-ref, not branch creation
-        assert len(branch_create_calls) == 0 or "show-ref" in str(branch_create_calls[0])
+        assert len(branch_create_calls) == 0 or "show-ref" in str(
+            branch_create_calls[0]
+        )
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_worktree_creation_failure_handled(self, mock_run):
         """Test that worktree creation failures are handled gracefully."""
+
         def side_effect(*args, **kwargs):
             # Check the command being run
             if "rev-parse" in str(args):
@@ -253,19 +255,21 @@ branch main
             elif "branch" in str(args) and "claude-wt-fail" in str(args):
                 return Mock(returncode=0)
             elif "worktree" in str(args) and "add" in str(args):
-                raise subprocess.CalledProcessError(1, ["git", "worktree", "add"], "Error creating worktree")
+                raise subprocess.CalledProcessError(
+                    1, ["git", "worktree", "add"], "Error creating worktree"
+                )
             else:
                 return Mock(returncode=0)
 
         mock_run.side_effect = side_effect
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
                     with pytest.raises(subprocess.CalledProcessError):
                         new(query="test", name="fail")
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_init_adds_to_gitignore(self, mock_run):
         """Test that init command adds .claude-wt/worktrees to .gitignore."""
         from claude_wt.cli import init
@@ -276,7 +280,7 @@ branch main
             # Mock git rev-parse to return our temp dir
             mock_run.return_value = Mock(stdout=str(repo_root), returncode=0)
 
-            with patch('claude_wt.cli.check_gitignore', return_value=False):
+            with patch("claude_wt.cli.check_gitignore", return_value=False):
                 # Create an existing .gitignore
                 gitignore = repo_root / ".gitignore"
                 gitignore.write_text("*.pyc\n")
@@ -288,21 +292,21 @@ branch main
                 assert ".claude-wt/worktrees" in content
                 assert "# Claude worktree management" in content
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_init_skips_if_already_ignored(self, mock_run):
         """Test that init skips if pattern already in gitignore."""
         from claude_wt.cli import init
 
         mock_run.return_value = Mock(stdout="/home/user/repo", returncode=0)
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
             # Should not raise an error, just print success message
             init()
 
         # No file operations should have occurred
         assert mock_run.call_count == 1  # Only git rev-parse
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_clean_identifies_external_worktrees(self, mock_run):
         """Test that clean correctly identifies external worktrees in sibling directories."""
         # Mixed worktree output with external and non-claude worktrees
@@ -336,7 +340,9 @@ branch main
 
         # Verify that only the claude-wt worktree was targeted for removal
         calls = mock_run.call_args_list
-        remove_calls = [call for call in calls if "worktree" in str(call) and "remove" in str(call)]
+        remove_calls = [
+            call for call in calls if "worktree" in str(call) and "remove" in str(call)
+        ]
 
         # Should have exactly 1 worktree remove call
         assert len(remove_calls) == 1

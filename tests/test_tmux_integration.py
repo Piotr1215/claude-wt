@@ -1,10 +1,8 @@
 """Tests for tmux integration in claude-wt."""
+
 import os
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
 import sys
+from unittest.mock import Mock, patch
 
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,8 +13,8 @@ from claude_wt.cli import new
 class TestTmuxIntegration:
     """Test tmux-related functionality."""
 
-    @patch('claude_wt.cli.subprocess.run')
-    @patch('claude_wt.cli.os.environ.get')
+    @patch("claude_wt.cli.subprocess.run")
+    @patch("claude_wt.cli.os.environ.get")
     def test_new_creates_tmux_session(self, mock_environ, mock_run):
         """Test that 'new' creates a tmux session when in tmux."""
         # Setup environment to simulate being in tmux
@@ -44,10 +42,10 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
                         new(query="test", name="tmux-test")
 
         # Verify that tmux session creation commands were called
@@ -60,10 +58,11 @@ class TestTmuxIntegration:
         assert len(switch_client_cmds) > 0
         assert any("wt-tmux-test" in str(cmd) for cmd in new_session_cmds)
 
-    @patch('os.environ.get')
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("os.environ.get")
+    @patch("claude_wt.cli.subprocess.run")
     def test_new_no_tmux_no_window_setting(self, mock_run, mock_environ_get):
         """Test that 'new' doesn't set tmux window path when not in tmux."""
+
         # Setup environment to simulate NOT being in tmux
         def env_side_effect(key, default=None):
             if key == "TMUX":
@@ -94,17 +93,17 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
                         new(query="test", name="no-tmux-test")
 
         # Verify that NO tmux commands were run
         assert len(tmux_commands) == 0
 
-    @patch('claude_wt.cli.subprocess.run')
-    @patch('claude_wt.cli.os.environ.get')
+    @patch("claude_wt.cli.subprocess.run")
+    @patch("claude_wt.cli.os.environ.get")
     def test_tmux_session_created_with_worktree_path(self, mock_environ, mock_run):
         """Test that tmux session is created with worktree path as working directory."""
         # Setup environment to simulate being in tmux
@@ -132,10 +131,10 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
                         new(query="test", name="tmux-window-test")
 
         # Verify tmux session was created with correct working directory
@@ -143,9 +142,12 @@ class TestTmuxIntegration:
         assert len(new_session_cmds) > 0
         # Check that the session is created with -c flag for working directory
         assert any("-c" in cmd for cmd in new_session_cmds)
-        assert any("/home/user/repo-worktrees/claude-wt-tmux-window-test" in str(cmd) for cmd in new_session_cmds)
+        assert any(
+            "/home/user/repo-worktrees/claude-wt-tmux-window-test" in str(cmd)
+            for cmd in new_session_cmds
+        )
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_print_path_flag_outputs_path_only(self, mock_run):
         """Test that --print-path outputs only the worktree path."""
         # Mock git commands
@@ -168,19 +170,22 @@ class TestTmuxIntegration:
             Mock(returncode=0),
         ]
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
-                        with patch('builtins.print') as mock_print:
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
+                        with patch("builtins.print") as mock_print:
                             new(name="path-test", print_path=True)
 
                             # Verify only the path was printed
                             mock_print.assert_called_once()
                             printed_path = mock_print.call_args[0][0]
-                            assert "/home/user/repo-worktrees/claude-wt-path-test" in printed_path
+                            assert (
+                                "/home/user/repo-worktrees/claude-wt-path-test"
+                                in printed_path
+                            )
 
-    @patch('claude_wt.cli.subprocess.run')
+    @patch("claude_wt.cli.subprocess.run")
     def test_no_pull_flag_skips_pull(self, mock_run):
         """Test that --no-pull flag skips the pull operation."""
         # Track git commands
@@ -206,13 +211,17 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch('claude_wt.cli.check_gitignore', return_value=True):
-            with patch('claude_wt.cli.Path.exists', return_value=False):
-                with patch('claude_wt.cli.Path.mkdir'):
-                    with patch('claude_wt.cli.create_worktree_context'):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
+            with patch("claude_wt.cli.Path.exists", return_value=False):
+                with patch("claude_wt.cli.Path.mkdir"):
+                    with patch("claude_wt.cli.create_worktree_context"):
                         new(name="no-pull-test", no_pull=True)
 
         # Verify that git pull and fetch were not called but switch was
-        assert not any("git pull" in cmd or " pull " in cmd for cmd in git_commands), f"Git pull found in commands: {git_commands}"
-        assert not any("git fetch" in cmd or " fetch " in cmd for cmd in git_commands), f"Git fetch found in commands: {git_commands}"
+        assert not any("git pull" in cmd or " pull " in cmd for cmd in git_commands), (
+            f"Git pull found in commands: {git_commands}"
+        )
+        assert not any(
+            "git fetch" in cmd or " fetch " in cmd for cmd in git_commands
+        ), f"Git fetch found in commands: {git_commands}"
         assert any("switch" in cmd for cmd in git_commands)
