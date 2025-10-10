@@ -302,7 +302,7 @@ This directory must be added to .gitignore to prevent committing worktree data.
                 claude_script = (
                     "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
                 )
-                claude_cmd = f"{claude_script} --add-dir {str(repo_root)}"
+                claude_cmd = f"{claude_script} --add-dir {str(repo_root)} --dangerously-skip-permissions"
                 if query:
                     claude_cmd += f' -- "{query}"'
 
@@ -323,14 +323,24 @@ This directory must be added to .gitignore to prevent committing worktree data.
             claude_script = (
                 "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
             )
-            claude_cmd = [claude_script, "--add-dir", str(repo_root)]
+            claude_cmd = [
+                claude_script,
+                "--add-dir",
+                str(repo_root),
+                "--dangerously-skip-permissions",
+            ]
             if query:
                 claude_cmd.extend(["--", query])
             subprocess.run(claude_cmd, cwd=wt_path)
     else:
         # Not in tmux, just launch Claude normally
         claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
-        claude_cmd = [claude_script, "--add-dir", str(repo_root)]
+        claude_cmd = [
+            claude_script,
+            "--add-dir",
+            str(repo_root),
+            "--dangerously-skip-permissions",
+        ]
         if query:
             claude_cmd.extend(["--", query])
         subprocess.run(claude_cmd, cwd=wt_path)
@@ -392,7 +402,13 @@ def resume(branch_name: str):
 
         # Launch Claude with --continue to resume conversation
         claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
-        claude_cmd = [claude_script, "--add-dir", str(repo_root), "--continue"]
+        claude_cmd = [
+            claude_script,
+            "--add-dir",
+            str(repo_root),
+            "--dangerously-skip-permissions",
+            "--continue",
+        ]
         subprocess.run(claude_cmd, cwd=wt_path)
 
     except subprocess.CalledProcessError as e:
@@ -767,7 +783,13 @@ def resume_issue(branch_name: str):
 
         # Launch Claude with --continue to resume conversation
         claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
-        claude_cmd = [claude_script, "--add-dir", str(repo_root), "--continue"]
+        claude_cmd = [
+            claude_script,
+            "--add-dir",
+            str(repo_root),
+            "--dangerously-skip-permissions",
+            "--continue",
+        ]
         subprocess.run(claude_cmd, cwd=wt_path)
 
     except subprocess.CalledProcessError as e:
@@ -1084,7 +1106,7 @@ def linear_issue(
             )
 
             if check_session.returncode != 0:
-                # Create new tmux session
+                # Create new tmux session with single pane
                 subprocess.run(
                     [
                         "tmux",
@@ -1098,22 +1120,6 @@ def linear_issue(
                         "work",
                     ]
                 )
-
-                # Split window horizontally
-                subprocess.run(
-                    [
-                        "tmux",
-                        "split-window",
-                        "-t",
-                        f"{session_name}:work",
-                        "-h",
-                        "-c",
-                        str(worktree_path),
-                    ]
-                )
-
-                # Select the right pane for Claude
-                subprocess.run(["tmux", "select-pane", "-t", f"{session_name}:work.1"])
 
                 # Get issue details and launch Claude
                 get_issue_script = (
@@ -1145,14 +1151,14 @@ def linear_issue(
                         f.write(f"Linear issue {issue_id}:\n\n{issue_details}")
                         temp_file = f.name
 
-                    # Launch Claude
-                    claude_cmd = f'{claude_script} --add-dir {worktree_path} -- "$(cat {temp_file})"'
+                    # Launch Claude with --dangerously-skip-permissions
+                    claude_cmd = f'{claude_script} --add-dir {worktree_path} --dangerously-skip-permissions -- "$(cat {temp_file})"'
                     subprocess.run(
                         [
                             "tmux",
                             "send-keys",
                             "-t",
-                            f"{session_name}:work.1",
+                            f"{session_name}:work",
                             claude_cmd,
                             "Enter",
                         ]
@@ -1163,13 +1169,13 @@ def linear_issue(
 
                 except subprocess.CalledProcessError:
                     # Launch Claude without issue details
-                    claude_cmd = f'{claude_script} --add-dir {worktree_path} -- "Working on issue {issue_id} in worktree at {worktree_path}"'
+                    claude_cmd = f'{claude_script} --add-dir {worktree_path} --dangerously-skip-permissions -- "Working on issue {issue_id} in worktree at {worktree_path}"'
                     subprocess.run(
                         [
                             "tmux",
                             "send-keys",
                             "-t",
-                            f"{session_name}:work.1",
+                            f"{session_name}:work",
                             claude_cmd,
                             "Enter",
                         ]
@@ -1180,7 +1186,8 @@ def linear_issue(
                     ["tmux", "switch-client", "-t", session_name], capture_output=True
                 )
 
-        return worktree_path
+        # Successfully completed - worktree path already printed to stdout
+        sys.exit(0)
 
     except subprocess.CalledProcessError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -1460,7 +1467,14 @@ This directory must be added to .gitignore to prevent committing worktree data.
 
         # Launch Claude with issue context
         claude_script = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
-        claude_cmd = [claude_script, "--add-dir", str(repo_root), "--", initial_query]
+        claude_cmd = [
+            claude_script,
+            "--add-dir",
+            str(repo_root),
+            "--dangerously-skip-permissions",
+            "--",
+            initial_query,
+        ]
 
         subprocess.run(claude_cmd, cwd=wt_path)
 
@@ -1668,8 +1682,6 @@ def from_pr_noninteractive(
 
         pr_data = json.loads(pr_info.stdout)
         pr_branch = pr_data["headRefName"]
-        pr_title = pr_data.get("title", "")
-        pr_body = pr_data.get("body", "")
 
         # Setup external worktree path in sibling directory
         worktree_base = get_worktree_base(repo_root)
@@ -1677,58 +1689,94 @@ def from_pr_noninteractive(
         wt_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
         wt_path = worktree_base / wt_name
 
-        # Create worktree if it doesn't exist
-        if not wt_path.exists():
-            # Fetch the PR ref (works for both same-repo and cross-repo PRs)
+        # Fetch the PR ref (works for both same-repo and cross-repo PRs)
+        subprocess.run(
+            ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head"],
+            check=True,
+            capture_output=True,
+        )
+
+        # Define branch name
+        branch_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
+
+        # Check if branch already exists
+        check_branch = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "show-ref",
+                "--verify",
+                f"refs/heads/{branch_name}",
+            ],
+            capture_output=True,
+        )
+
+        # Update or create the branch to point to PR's latest commit
+        if check_branch.returncode == 0:
+            # Branch exists, force update it to FETCH_HEAD
             subprocess.run(
-                ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head"],
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "branch",
+                    "-f",
+                    branch_name,
+                    "FETCH_HEAD",
+                ],
+                check=True,
+                capture_output=True,
+            )
+        else:
+            # Branch doesn't exist, create it
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "branch",
+                    branch_name,
+                    "FETCH_HEAD",
+                ],
                 check=True,
                 capture_output=True,
             )
 
-            # Check if branch already exists
-            branch_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
-            check_branch = subprocess.run(
-                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{branch_name}"],
+        # Now handle worktree
+        if not wt_path.exists():
+            # Create new worktree
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "worktree",
+                    "add",
+                    str(wt_path),
+                    branch_name,
+                ],
+                check=True,
                 capture_output=True,
             )
-
-            # Create worktree from the fetched ref
-            if check_branch.returncode == 0:
-                # Branch exists, just add worktree
-                subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(repo_root),
-                        "worktree",
-                        "add",
-                        str(wt_path),
-                        branch_name,
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
-            else:
-                # Branch doesn't exist, create it
-                subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(repo_root),
-                        "worktree",
-                        "add",
-                        str(wt_path),
-                        "-b",
-                        branch_name,
-                        "FETCH_HEAD",
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
             print(f"Created worktree at {wt_path}", file=sys.stderr)
         else:
-            print(f"Worktree already exists at {wt_path}", file=sys.stderr)
+            # Worktree exists, ensure it's on the correct branch
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(wt_path),
+                    "checkout",
+                    branch_name,
+                ],
+                check=True,
+                capture_output=True,
+            )
+            print(
+                f"Worktree already exists at {wt_path}, updated to branch {branch_name}",
+                file=sys.stderr,
+            )
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(wt_path, f"PR #{pr_number}", pr_branch, repo_root)
@@ -1738,12 +1786,23 @@ def from_pr_noninteractive(
 
         # If session_name provided, create tmux session and launch Claude
         if session_name:
+            # DEBUG: Log session creation
+            with open("/tmp/claude-wt-session-debug.log", "a") as f:
+                f.write("\n=== from_pr_noninteractive SESSION CREATION ===\n")
+                f.write(f"session_name parameter: '{session_name}'\n")
+                f.write(f"worktree_path: {wt_path}\n")
+                f.write(f"pr_number: {pr_number}\n")
+
             # Check if session exists
             check_session = subprocess.run(
                 ["tmux", "has-session", "-t", session_name], capture_output=True
             )
 
             if check_session.returncode != 0:
+                # DEBUG: Log actual creation
+                with open("/tmp/claude-wt-session-debug.log", "a") as f:
+                    f.write(f"Creating NEW tmux session: '{session_name}'\n")
+
                 # Create new tmux session
                 subprocess.run(
                     [
@@ -1758,146 +1817,35 @@ def from_pr_noninteractive(
                         "work",
                     ]
                 )
+            else:
+                with open("/tmp/claude-wt-session-debug.log", "a") as f:
+                    f.write(f"Session '{session_name}' ALREADY EXISTS\n")
 
-                # Launch Claude with PR review command
-                claude_script = (
-                    "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
-                )
+            # Launch Claude with PR review command (ALWAYS - new or existing session)
+            claude_script = (
+                "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+            )
 
-                # Launch Claude in the worktree with /ops-pr-review command as initial prompt
-                claude_cmd = f'{claude_script} --add-dir {wt_path} --dangerously-skip-permissions -- "/ops-pr-review {pr_number}"'
-                subprocess.run(
-                    [
-                        "tmux",
-                        "send-keys",
-                        "-t",
-                        f"{session_name}:work",
-                        claude_cmd,
-                        "Enter",
-                    ]
-                )
+            # Launch Claude in the worktree with /ops-pr-review command as initial prompt
+            claude_cmd = f'{claude_script} --add-dir {wt_path} --dangerously-skip-permissions -- "/ops-pr-review {pr_number}"'
+            subprocess.run(
+                [
+                    "tmux",
+                    "send-keys",
+                    "-t",
+                    f"{session_name}:work",
+                    claude_cmd,
+                    "Enter",
+                ]
+            )
 
             # Switch to session
             subprocess.run(
                 ["tmux", "switch-client", "-t", session_name], capture_output=True
             )
 
-        return wt_path
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        raise SystemExit(1)
-    except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        raise SystemExit(1)
-
-
-@app.command
-def from_issue_noninteractive(issue_id: str, branch_name: str, query: str = ""):
-    """Create a worktree from a Linear issue ID non-interactively.
-
-    DEPRECATED: Use 'linear_issue' command instead with --no-interactive flag.
-    This command is kept for backward compatibility.
-
-    Parameters
-    ----------
-    issue_id : str
-        Linear issue ID (e.g., DOC-856)
-    branch_name : str
-        Branch name suffix
-    query : str
-        Optional query to send to Claude
-    """
-    try:
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-
-        # Create the branch name (issue-id/branch-suffix)
-        issue_branch_name = f"{issue_id.lower()}/{branch_name}"
-
-        # Switch to main and pull latest
-        subprocess.run(
-            ["git", "-C", str(repo_root), "fetch", "origin"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(repo_root), "checkout", "main"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"],
-            check=True,
-            capture_output=True,
-        )
-
-        # Create the issue branch if it doesn't exist
-        try:
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "show-ref",
-                    "--verify",
-                    "--quiet",
-                    f"refs/heads/{issue_branch_name}",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            print(
-                f"Branch {issue_branch_name} already exists, using it", file=sys.stderr
-            )
-        except subprocess.CalledProcessError:
-            # Branch doesn't exist, create it from main
-            subprocess.run(
-                ["git", "-C", str(repo_root), "branch", issue_branch_name, "main"],
-                check=True,
-                capture_output=True,
-            )
-
-        # Setup external worktree path in sibling directory
-        worktree_base = get_worktree_base(repo_root)
-        worktree_base.mkdir(parents=True, exist_ok=True)
-        wt_path = worktree_base / issue_branch_name.replace("/", "-")
-
-        # Create worktree if it doesn't exist
-        if not wt_path.exists():
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "worktree",
-                    "add",
-                    "--quiet",
-                    str(wt_path),
-                    issue_branch_name,
-                ],
-                check=True,
-                capture_output=True,
-            )
-            print(f"Created worktree at {wt_path}", file=sys.stderr)
-        else:
-            print(f"Worktree already exists at {wt_path}", file=sys.stderr)
-
-        # Create worktree-specific CLAUDE.md
-        create_worktree_context(wt_path, issue_id, issue_branch_name, repo_root)
-
-        # Output the worktree path for the hook to use
-        # This is the only output that should go to stdout for the hook to parse
-        print(str(wt_path))
-
-        # Don't launch Claude here - let the hook handle launching the tmuxinator session
-        # which will set up the proper environment
+        # Successfully completed - worktree path already printed to stdout
+        sys.exit(0)
 
     except subprocess.CalledProcessError as e:
         print(f"Error: {e}", file=sys.stderr)

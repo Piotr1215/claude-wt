@@ -43,12 +43,18 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
+            Mock(
+                returncode=1, stdout="", stderr=""
+            ),  # git show-ref (branch doesn't exist)
+            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
-        # Test
-        from_pr_noninteractive(pr_number="123")
+        # Test - expect SystemExit(0) on success
+        with pytest.raises(SystemExit) as exc_info:
+            from_pr_noninteractive(pr_number="123")
+
+        assert exc_info.value.code == 0, "Should exit successfully"
 
         # Verify gh pr view was called
         assert mock_run.call_args_list[1] == call(
@@ -102,12 +108,18 @@ class TestFromPRNoninteractive:
             # When repo_path is not ".", no git rev-parse is called
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
+            Mock(
+                returncode=1, stdout="", stderr=""
+            ),  # git show-ref (branch doesn't exist)
+            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
-        # Test with explicit repo path
-        from_pr_noninteractive(pr_number="456", repo_path="/home/user/myrepo")
+        # Test with explicit repo path - expect SystemExit(0) on success
+        with pytest.raises(SystemExit) as exc_info:
+            from_pr_noninteractive(pr_number="456", repo_path="/home/user/myrepo")
+
+        assert exc_info.value.code == 0, "Should exit successfully"
 
         # Verify worktree was created in the sibling directory
         assert any(
@@ -168,6 +180,9 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
+            Mock(returncode=0, stdout="", stderr=""),  # git show-ref (branch exists)
+            Mock(returncode=0, stdout="", stderr=""),  # git branch -f (update branch)
+            Mock(returncode=0, stdout="", stderr=""),  # git checkout (in worktree)
         ]
 
         # Mock that worktree path exists
@@ -177,8 +192,11 @@ class TestFromPRNoninteractive:
 
         mock_exists.return_value = True
 
-        # Test
-        from_pr_noninteractive(pr_number="789")
+        # Test - expect SystemExit(0) on success
+        with pytest.raises(SystemExit) as exc_info:
+            from_pr_noninteractive(pr_number="789")
+
+        assert exc_info.value.code == 0, "Should exit successfully"
 
         # Should print the existing worktree path
         assert any(
@@ -213,12 +231,18 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
+            Mock(
+                returncode=1, stdout="", stderr=""
+            ),  # git show-ref (branch doesn't exist)
+            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
-        # Test
-        from_pr_noninteractive(pr_number="321")
+        # Test - expect SystemExit(0) on success
+        with pytest.raises(SystemExit) as exc_info:
+            from_pr_noninteractive(pr_number="321")
+
+        assert exc_info.value.code == 0, "Should exit successfully"
 
         # Verify the worktree was created (tmux session is created by the hook, not this function)
         worktree_calls = [
@@ -258,12 +282,18 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
+            Mock(
+                returncode=1, stdout="", stderr=""
+            ),  # git show-ref (branch doesn't exist)
+            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
-        # Test without session name
-        from_pr_noninteractive(pr_number="555")
+        # Test without session name - expect SystemExit(0) on success
+        with pytest.raises(SystemExit) as exc_info:
+            from_pr_noninteractive(pr_number="555")
+
+        assert exc_info.value.code == 0, "Should exit successfully"
 
         # Verify the command completed successfully
         assert any(
