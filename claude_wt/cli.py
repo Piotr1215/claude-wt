@@ -1671,13 +1671,6 @@ def from_pr_noninteractive(
         pr_title = pr_data.get("title", "")
         pr_body = pr_data.get("body", "")
 
-        # Fetch the PR branch
-        subprocess.run(
-            ["git", "-C", str(repo_root), "fetch", "origin", pr_branch],
-            check=True,
-            capture_output=True,
-        )
-
         # Setup external worktree path in sibling directory
         worktree_base = get_worktree_base(repo_root)
         worktree_base.mkdir(parents=True, exist_ok=True)
@@ -1686,20 +1679,53 @@ def from_pr_noninteractive(
 
         # Create worktree if it doesn't exist
         if not wt_path.exists():
+            # Fetch the PR ref (works for both same-repo and cross-repo PRs)
             subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "worktree",
-                    "add",
-                    "--quiet",
-                    str(wt_path),
-                    f"origin/{pr_branch}",
-                ],
+                ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head"],
                 check=True,
                 capture_output=True,
             )
+
+            # Check if branch already exists
+            branch_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
+            check_branch = subprocess.run(
+                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{branch_name}"],
+                capture_output=True,
+            )
+
+            # Create worktree from the fetched ref
+            if check_branch.returncode == 0:
+                # Branch exists, just add worktree
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(repo_root),
+                        "worktree",
+                        "add",
+                        str(wt_path),
+                        branch_name,
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+            else:
+                # Branch doesn't exist, create it
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(repo_root),
+                        "worktree",
+                        "add",
+                        str(wt_path),
+                        "-b",
+                        branch_name,
+                        "FETCH_HEAD",
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
             print(f"Created worktree at {wt_path}", file=sys.stderr)
         else:
             print(f"Worktree already exists at {wt_path}", file=sys.stderr)
@@ -1738,24 +1764,8 @@ def from_pr_noninteractive(
                     "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
                 )
 
-                # Create temp file with PR review request
-                import tempfile
-
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".txt", delete=False
-                ) as f:
-                    f.write(
-                        f"IMPORTANT: You are in a worktree for PR #{pr_number} at {wt_path}\n\n"
-                    )
-                    f.write(f"PR Title: {pr_title}\n\n")
-                    if pr_body:
-                        f.write(f"PR Description:\n{pr_body}\n\n")
-                    f.write("Please run the following command to review this PR:\n\n")
-                    f.write(f"/ops-pr-review {pr_number}\n")
-                    temp_file = f.name
-
-                # Launch Claude with the PR context
-                claude_cmd = f'{claude_script} --add-dir {wt_path} --dangerously-skip-permissions -- "$(cat {temp_file})"'
+                # Launch Claude in the worktree with /ops-pr-review command as initial prompt
+                claude_cmd = f'{claude_script} --add-dir {wt_path} --dangerously-skip-permissions -- "/ops-pr-review {pr_number}"'
                 subprocess.run(
                     [
                         "tmux",
@@ -1766,9 +1776,6 @@ def from_pr_noninteractive(
                         "Enter",
                     ]
                 )
-
-                # Clean up temp file after a delay
-                subprocess.Popen(["sh", "-c", f"sleep 2 && rm {temp_file}"])
 
             # Switch to session
             subprocess.run(

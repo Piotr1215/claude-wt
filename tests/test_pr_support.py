@@ -43,6 +43,7 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
+            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -101,6 +102,7 @@ class TestFromPRNoninteractive:
             # When repo_path is not ".", no git rev-parse is called
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
+            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -211,6 +213,7 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
+            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -255,6 +258,7 @@ class TestFromPRNoninteractive:
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
             Mock(returncode=0, stdout="", stderr=""),  # git fetch
+            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (branch doesn't exist)
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
