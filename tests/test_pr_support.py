@@ -42,11 +42,7 @@ class TestFromPRNoninteractive:
         mock_run.side_effect = [
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
-            Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(
-                returncode=1, stdout="", stderr=""
-            ),  # git show-ref (branch doesn't exist)
-            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch origin pr_branch
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -107,11 +103,7 @@ class TestFromPRNoninteractive:
         mock_run.side_effect = [
             # When repo_path is not ".", no git rev-parse is called
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
-            Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(
-                returncode=1, stdout="", stderr=""
-            ),  # git show-ref (branch doesn't exist)
-            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch origin pr_branch
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -179,10 +171,8 @@ class TestFromPRNoninteractive:
         mock_run.side_effect = [
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
-            Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(returncode=0, stdout="", stderr=""),  # git show-ref (branch exists)
-            Mock(returncode=0, stdout="", stderr=""),  # git branch -f (update branch)
-            Mock(returncode=0, stdout="", stderr=""),  # git checkout (in worktree)
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch origin pr_branch
+            Mock(returncode=0, stdout="", stderr=""),  # git pull (in existing worktree)
         ]
 
         # Mock that worktree path exists
@@ -230,11 +220,7 @@ class TestFromPRNoninteractive:
         mock_run.side_effect = [
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
-            Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(
-                returncode=1, stdout="", stderr=""
-            ),  # git show-ref (branch doesn't exist)
-            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch origin pr_branch
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -281,11 +267,7 @@ class TestFromPRNoninteractive:
         mock_run.side_effect = [
             Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view (JSON)
-            Mock(returncode=0, stdout="", stderr=""),  # git fetch
-            Mock(
-                returncode=1, stdout="", stderr=""
-            ),  # git show-ref (branch doesn't exist)
-            Mock(returncode=0, stdout="", stderr=""),  # git branch (create branch)
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch origin pr_branch
             Mock(returncode=0, stdout="", stderr=""),  # git worktree add
         ]
 
@@ -437,3 +419,81 @@ class TestPRWorkflowIntegration:
         session_name = f"wt-pr-{pr_number}"  # Simplified session name
 
         assert session_name == "wt-pr-123"
+
+    @patch("claude_wt.cli.Path.write_text")
+    @patch("claude_wt.cli.Path.mkdir")
+    @patch("claude_wt.cli.subprocess.run")
+    @patch("builtins.print")
+    @patch("claude_wt.cli.Path.cwd")
+    def test_pr_branch_tracking_not_prefixed(
+        self, mock_cwd, mock_print, mock_run, mock_mkdir, mock_write
+    ):
+        """
+        Verify that worktree tracks the actual PR branch,
+        not a prefixed local branch like pr-123-branch-name.
+
+        This test catches the bug where from_pr_noninteractive
+        was creating local branches with pr-{number}- prefix.
+        """
+        # Setup
+        mock_cwd.return_value = Path("/home/user/repo")
+
+        pr_branch = "update-snapshot-docs"
+        pr_json = json.dumps(
+            {
+                "headRefName": pr_branch,
+                "title": "Add volume snapshot docs",
+                "number": 1213,
+                "body": "Test body",
+            }
+        )
+
+        # Mock the git/gh calls with new behavior
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="/home/user/repo", stderr=""),  # git rev-parse
+            Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch origin pr_branch
+            Mock(returncode=0, stdout="", stderr=""),  # git worktree add
+        ]
+
+        # Create mock Path.exists to return False (worktree doesn't exist)
+        with patch("claude_wt.cli.Path.exists", return_value=False):
+            with pytest.raises(SystemExit) as exc_info:
+                from_pr_noninteractive(pr_number="1213")
+
+        assert exc_info.value.code == 0, "Should exit successfully"
+
+        # Verify git fetch uses the actual PR branch, not pull/{number}/head
+        fetch_calls = [
+            call for call in mock_run.call_args_list
+            if len(call[0]) > 0 and "fetch" in call[0][0]
+        ]
+        assert len(fetch_calls) == 1, "Should have exactly one fetch call"
+        fetch_cmd = fetch_calls[0][0][0]
+        assert fetch_cmd == ["git", "-C", "/home/user/repo", "fetch", "origin", pr_branch], \
+            f"Should fetch 'origin {pr_branch}', not 'pull/1213/head'. Got: {fetch_cmd}"
+
+        # Verify no git branch command is called (no local branch creation)
+        branch_create_calls = [
+            call for call in mock_run.call_args_list
+            if len(call[0]) > 0 and "branch" in call[0][0] and "show-ref" not in str(call)
+        ]
+        assert len(branch_create_calls) == 0, \
+            f"Should not create a local branch with pr- prefix. Found: {branch_create_calls}"
+
+        # Verify worktree add uses origin/{pr_branch}, not a local prefixed branch
+        worktree_calls = [
+            call for call in mock_run.call_args_list
+            if len(call[0]) > 0 and "worktree" in call[0][0] and "add" in call[0][0]
+        ]
+        assert len(worktree_calls) == 1, "Should have exactly one worktree add call"
+        worktree_cmd = worktree_calls[0][0][0]
+
+        # The last argument should be origin/{pr_branch}
+        assert worktree_cmd[-1] == f"origin/{pr_branch}", \
+            f"Worktree should track 'origin/{pr_branch}', not 'pr-1213-{pr_branch}'. Got: {worktree_cmd[-1]}"
+
+        # Verify worktree path still uses pr- prefix for directory naming (that's OK)
+        worktree_path_arg = worktree_cmd[-2]  # Second to last arg is the path
+        assert "pr-1213" in str(worktree_path_arg), \
+            "Worktree directory name should still include pr- prefix for clarity"
