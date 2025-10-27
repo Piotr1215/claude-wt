@@ -1561,12 +1561,34 @@ def from_pr(pr_number: str = "", query: str = ""):
         pr_title = pr_data.get("title", "")
         pr_body = pr_data.get("body", "")
 
-        # Fetch the PR branch
-        subprocess.run(
+        # Fetch the PR branch from origin
+        fetch_result = subprocess.run(
             ["git", "-C", str(repo_root), "fetch", "origin", pr_branch],
-            check=True,
             capture_output=True,
         )
+
+        if fetch_result.returncode == 0:
+            # Branch exists in origin (same-repo PR)
+            # Create local branch tracking origin/branch if it doesn't exist
+            check_branch = subprocess.run(
+                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{pr_branch}"],
+                capture_output=True,
+            )
+            if check_branch.returncode != 0:
+                # Local branch doesn't exist, create it tracking origin
+                subprocess.run(
+                    ["git", "-C", str(repo_root), "branch", "--track", pr_branch, f"origin/{pr_branch}"],
+                    check=True,
+                    capture_output=True,
+                )
+        else:
+            # Branch doesn't exist in origin (fork PR)
+            # Fetch PR and create a local branch
+            subprocess.run(
+                ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head:{pr_branch}"],
+                check=True,
+                capture_output=True,
+            )
 
         # Setup external worktree path in sibling directory
         worktree_base = get_worktree_base(repo_root)
@@ -1574,7 +1596,7 @@ def from_pr(pr_number: str = "", query: str = ""):
         wt_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
         wt_path = worktree_base / wt_name
 
-        # Create worktree if it doesn't exist
+        # Create worktree if it doesn't exist - always use local branch name
         if not wt_path.exists():
             subprocess.run(
                 [
@@ -1585,7 +1607,7 @@ def from_pr(pr_number: str = "", query: str = ""):
                     "add",
                     "--quiet",
                     str(wt_path),
-                    f"origin/{pr_branch}",
+                    pr_branch,
                 ],
                 check=True,
                 capture_output=True,
@@ -1689,63 +1711,37 @@ def from_pr_noninteractive(
         wt_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
         wt_path = worktree_base / wt_name
 
-        # Fetch the PR ref (works for both same-repo and cross-repo PRs)
-        subprocess.run(
-            ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head"],
-            check=True,
+        # Try to fetch the PR branch from origin
+        fetch_result = subprocess.run(
+            ["git", "-C", str(repo_root), "fetch", "origin", pr_branch],
             capture_output=True,
         )
 
-        # Define branch name
-        branch_name = f"pr-{pr_number}-{pr_branch.replace('/', '-')}"
-
-        # Check if branch already exists
-        check_branch = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repo_root),
-                "show-ref",
-                "--verify",
-                f"refs/heads/{branch_name}",
-            ],
-            capture_output=True,
-        )
-
-        # Update or create the branch to point to PR's latest commit
-        if check_branch.returncode == 0:
-            # Branch exists, force update it to FETCH_HEAD
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "branch",
-                    "-f",
-                    branch_name,
-                    "FETCH_HEAD",
-                ],
-                check=True,
+        if fetch_result.returncode == 0:
+            # Branch exists in origin (same-repo PR)
+            # Create local branch tracking origin/branch if it doesn't exist
+            check_branch = subprocess.run(
+                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{pr_branch}"],
                 capture_output=True,
             )
+            if check_branch.returncode != 0:
+                # Local branch doesn't exist, create it tracking origin
+                subprocess.run(
+                    ["git", "-C", str(repo_root), "branch", "--track", pr_branch, f"origin/{pr_branch}"],
+                    check=True,
+                    capture_output=True,
+                )
         else:
-            # Branch doesn't exist, create it
+            # Branch doesn't exist in origin (fork PR)
+            # Fetch PR and create a local branch
             subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "branch",
-                    branch_name,
-                    "FETCH_HEAD",
-                ],
+                ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head:{pr_branch}"],
                 check=True,
                 capture_output=True,
             )
 
-        # Now handle worktree
+        # Create worktree if it doesn't exist - always use local branch name
         if not wt_path.exists():
-            # Create new worktree
             subprocess.run(
                 [
                     "git",
@@ -1753,28 +1749,28 @@ def from_pr_noninteractive(
                     str(repo_root),
                     "worktree",
                     "add",
+                    "--quiet",
                     str(wt_path),
-                    branch_name,
+                    pr_branch,
                 ],
                 check=True,
                 capture_output=True,
             )
             print(f"Created worktree at {wt_path}", file=sys.stderr)
         else:
-            # Worktree exists, ensure it's on the correct branch
+            # Worktree exists, pull latest
             subprocess.run(
                 [
                     "git",
                     "-C",
                     str(wt_path),
-                    "checkout",
-                    branch_name,
+                    "pull",
                 ],
                 check=True,
                 capture_output=True,
             )
             print(
-                f"Worktree already exists at {wt_path}, updated to branch {branch_name}",
+                f"Worktree already exists at {wt_path}, pulled latest changes",
                 file=sys.stderr,
             )
 
