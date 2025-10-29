@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -1704,6 +1705,29 @@ def from_pr_noninteractive(
 
         pr_data = json.loads(pr_info.stdout)
         pr_branch = pr_data["headRefName"]
+        pr_body = pr_data.get("body", "")
+
+        # Extract Linear issue ID from branch name or PR body
+        linear_issue_id = None
+
+        # Try branch name first (e.g., doc-975-feature, DOC-975-feature)
+        branch_match = re.search(r'(doc|DOC|DEV|dev|ENG|eng)-(\d+)', pr_branch)
+        if branch_match:
+            linear_issue_id = f"{branch_match.group(1).upper()}-{branch_match.group(2)}"
+
+        # Try PR body (e.g., "Fixes DOC-975" or Linear URL)
+        if not linear_issue_id and pr_body:
+            body_match = re.search(r'(DOC|DEV|ENG)-\d+', pr_body, re.IGNORECASE)
+            if body_match:
+                linear_issue_id = body_match.group(0).upper()
+
+        # Determine skill to activate based on repo name
+        repo_name = repo_root.name.lower()
+        skill_instruction = ""
+        if "vcluster-docs" in repo_name:
+            skill_instruction = "Activate the vcluster-docs-writer skill to get context-aware assistance."
+        elif "platform-docs" in repo_name:
+            skill_instruction = "Activate appropriate documentation skills."
 
         # Setup external worktree path in sibling directory
         worktree_base = get_worktree_base(repo_root)
@@ -1822,8 +1846,25 @@ def from_pr_noninteractive(
                 "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
             )
 
-            # Launch Claude in the worktree with /ops-pr-review command as initial prompt
-            claude_cmd = f'{claude_script} --add-dir {wt_path} --dangerously-skip-permissions -- "/ops-pr-review {pr_number}"'
+            # Build initial prompt with multiple commands
+            prompt_parts = []
+
+            # Add Linear issue command if found
+            if linear_issue_id:
+                prompt_parts.append(f"/ops-linear-issue {linear_issue_id}")
+
+            # Add skill activation instruction if applicable
+            if skill_instruction:
+                prompt_parts.append(skill_instruction)
+
+            # Add PR review command
+            prompt_parts.append(f"/ops-pr-review {pr_number}")
+
+            # Combine with double newlines
+            initial_prompt = "\n\n".join(prompt_parts)
+
+            # Launch Claude in the worktree with multi-command prompt
+            claude_cmd = f'{claude_script} --add-dir {wt_path} --dangerously-skip-permissions -- "{initial_prompt}"'
             subprocess.run(
                 [
                     "tmux",
