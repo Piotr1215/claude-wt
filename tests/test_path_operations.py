@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from claude_wt.cli import check_gitignore, create_worktree_context, get_worktree_base
+from claude_wt.core import check_gitignore, create_worktree_context, get_worktree_base
 
 
 class TestPathOperations:

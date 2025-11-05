@@ -19,7 +19,7 @@ class TestGitOperations:
     """Test git-related operations."""
 
     @patch("claude_wt.cli.subprocess.run")
-    @patch("claude_wt.cli.os.environ.get")
+    @patch("os.environ.get")
     def test_new_creates_worktree_with_branch(self, mock_environ, mock_run):
         """Test that 'new' command creates a worktree and branch."""
         # Mock TMUX env var to simulate being in tmux
@@ -51,11 +51,11 @@ class TestGitOperations:
             Mock(returncode=0),
         ]
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists") as mock_exists:
                 mock_exists.return_value = False
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         # This would normally exit, so we catch the SystemExit
                         new(query="test query", name="test-feature")
 
@@ -158,7 +158,7 @@ branch main
         assert mock_scan_path.glob.called
 
     @patch("claude_wt.cli.subprocess.run")
-    @patch("claude_wt.cli.os.environ.get")
+    @patch("os.environ.get")
     def test_handles_existing_branch(self, mock_environ, mock_run):
         """Test that new command handles existing branch gracefully."""
         # Mock TMUX env var
@@ -187,10 +187,10 @@ branch main
             Mock(returncode=0),
         ]
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         new(query="test", name="existing")
 
         # Verify branch creation was skipped (show-ref succeeded)
@@ -234,34 +234,37 @@ branch main
 
         mock_run.side_effect = side_effect
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with pytest.raises(subprocess.CalledProcessError):
+                    with pytest.raises(SystemExit) as exc_info:
                         new(query="test", name="fail")
+                    assert exc_info.value.code == 1
 
-    @patch("claude_wt.cli.subprocess.run")
-    def test_init_adds_to_gitignore(self, mock_run):
+    def test_init_adds_to_gitignore(self):
         """Test that init command adds .claude-wt/worktrees to .gitignore."""
         from claude_wt.cli import init
 
         with tempfile.TemporaryDirectory() as tmpdir:
             repo_root = Path(tmpdir)
 
-            # Mock git rev-parse to return our temp dir
-            mock_run.return_value = Mock(stdout=str(repo_root), returncode=0)
+            # Create an existing .gitignore
+            gitignore = repo_root / ".gitignore"
+            gitignore.write_text("*.pyc\n")
 
-            with patch("claude_wt.cli.check_gitignore", return_value=False):
-                # Create an existing .gitignore
-                gitignore = repo_root / ".gitignore"
-                gitignore.write_text("*.pyc\n")
+            with patch("claude_wt.cli.subprocess.run") as mock_run:
+                # Mock git rev-parse to return our temp dir
+                mock_run.return_value = Mock(
+                    stdout=str(repo_root), returncode=0, stderr=""
+                )
 
-                init()
+                with patch("claude_wt.cli.check_gitignore", return_value=False):
+                    init()
 
-                # Check that .claude-wt/worktrees was added
-                content = gitignore.read_text()
-                assert ".claude-wt/worktrees" in content
-                assert "# Claude worktree management" in content
+                    # Check that .claude-wt/worktrees was added
+                    content = gitignore.read_text()
+                    assert ".claude-wt/worktrees" in content
+                    assert "# Claude worktree management" in content
 
     @patch("claude_wt.cli.subprocess.run")
     def test_init_skips_if_already_ignored(self, mock_run):
@@ -270,7 +273,7 @@ branch main
 
         mock_run.return_value = Mock(stdout="/home/user/repo", returncode=0)
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             # Should not raise an error, just print success message
             init()
 

@@ -14,7 +14,7 @@ class TestTmuxIntegration:
     """Test tmux-related functionality."""
 
     @patch("claude_wt.cli.subprocess.run")
-    @patch("claude_wt.cli.os.environ.get")
+    @patch("os.environ.get")
     def test_new_creates_tmux_session(self, mock_environ, mock_run):
         """Test that 'new' creates a tmux session when in tmux."""
         # Setup environment to simulate being in tmux
@@ -42,10 +42,10 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         new(query="test", name="tmux-test")
 
         # Verify that tmux session creation commands were called
@@ -93,17 +93,17 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         new(query="test", name="no-tmux-test")
 
         # Verify that NO tmux commands were run
         assert len(tmux_commands) == 0
 
     @patch("claude_wt.cli.subprocess.run")
-    @patch("claude_wt.cli.os.environ.get")
+    @patch("os.environ.get")
     def test_tmux_session_created_with_worktree_path(self, mock_environ, mock_run):
         """Test that tmux session is created with worktree path as working directory."""
         # Setup environment to simulate being in tmux
@@ -131,10 +131,10 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         new(query="test", name="tmux-window-test")
 
         # Verify tmux session was created with correct working directory
@@ -170,10 +170,10 @@ class TestTmuxIntegration:
             Mock(returncode=0),
         ]
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         with patch("builtins.print") as mock_print:
                             new(name="path-test", print_path=True)
 
@@ -211,10 +211,10 @@ class TestTmuxIntegration:
 
         mock_run.side_effect = run_side_effect
 
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
+        with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
-                    with patch("claude_wt.cli.create_worktree_context"):
+                    with patch("claude_wt.worktree.create_worktree_context"):
                         new(name="no-pull-test", pull=False)
 
         # Verify that git pull and fetch were not called but switch was
