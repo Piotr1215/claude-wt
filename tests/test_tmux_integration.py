@@ -215,7 +215,7 @@ class TestTmuxIntegration:
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
                     with patch("claude_wt.cli.create_worktree_context"):
-                        new(name="no-pull-test", no_pull=True)
+                        new(name="no-pull-test", pull=False)
 
         # Verify that git pull and fetch were not called but switch was
         assert not any("git pull" in cmd or " pull " in cmd for cmd in git_commands), (

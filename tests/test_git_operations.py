@@ -12,8 +12,7 @@ import pytest
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from claude_wt.cli import clean, new, resume
-from claude_wt.cli import list as list_worktrees
+from claude_wt.cli import clean, new, list_worktrees
 
 
 class TestGitOperations:
@@ -64,35 +63,6 @@ class TestGitOperations:
         calls = mock_run.call_args_list
         assert any("rev-parse" in str(call) for call in calls)
         assert any("worktree" in str(call) and "add" in str(call) for call in calls)
-
-    @patch("claude_wt.cli.subprocess.run")
-    def test_resume_finds_existing_worktree(self, mock_run):
-        """Test that resume finds and uses existing worktree."""
-        worktree_output = """worktree /home/user/repo-worktrees/claude-wt-test
-HEAD abc123
-branch claude-wt-test
-
-worktree /home/user/repo
-HEAD def456
-branch main
-"""
-
-        mock_run.side_effect = [
-            # git rev-parse --show-toplevel
-            Mock(stdout="/home/user/repo", returncode=0),
-            # git worktree list --porcelain
-            Mock(stdout=worktree_output, returncode=0),
-            # Launch Claude script
-            Mock(returncode=0),
-        ]
-
-        with patch("claude_wt.cli.Path.exists", return_value=True):
-            # The resume function launches Claude and returns normally
-            resume("test")
-
-        # Verify the Claude script was launched
-        calls = mock_run.call_args_list
-        assert len(calls) == 3  # rev-parse, worktree list, and Claude launch
 
     @patch("claude_wt.cli.subprocess.run")
     def test_clean_removes_worktree_and_branch(self, mock_run):
@@ -155,36 +125,37 @@ branch main
         remove_calls = [call for call in calls if "remove" in str(call)]
         assert len(remove_calls) >= 2  # At least 2 worktrees removed
 
-    @patch("claude_wt.cli.subprocess.run")
-    def test_list_shows_claude_worktrees(self, mock_run):
-        """Test that list command shows only claude-wt worktrees."""
-        worktree_output = """worktree /home/user/repo-worktrees/claude-wt-test
-HEAD abc123
-branch claude-wt-test
+    @patch("claude_wt.cli.Path.glob")
+    @patch("claude_wt.cli.Path.exists")
+    @patch("claude_wt.cli.Path.expanduser")
+    def test_list_shows_claude_worktrees(self, mock_expanduser, mock_exists, mock_glob):
+        """Test that list command scans directories and shows claude-wt worktrees."""
+        # Mock the scan path
+        mock_scan_path = Mock()
+        mock_expanduser.return_value = mock_scan_path
+        mock_scan_path.exists.return_value = True
 
-worktree /home/user/other-branch
-HEAD def456
-branch feature/other
+        # Mock worktree base directories
+        mock_wt_base1 = Mock()
+        mock_wt_base1.name = "repo1-worktrees"
+        mock_wt_base1.is_dir.return_value = True
 
-worktree /home/user/repo
-HEAD ghi789
-branch main
-"""
+        # Mock claude-wt worktrees
+        mock_wt1 = Mock()
+        mock_wt1.name = "claude-wt-session1"
+        mock_wt1.is_dir.return_value = True
 
-        mock_run.side_effect = [
-            # git rev-parse --show-toplevel
-            Mock(stdout="/home/user/repo", returncode=0),
-            # git worktree list --porcelain
-            Mock(stdout=worktree_output, returncode=0),
-        ]
+        mock_wt_base1.iterdir.return_value = [mock_wt1]
+        mock_scan_path.glob.return_value = [mock_wt_base1]
 
-        with patch("claude_wt.cli.Path.exists", return_value=True):
-            # This prints to console, so we just verify it doesn't error
-            list_worktrees()
+        # Mock Path.exists for worktree paths
+        mock_exists.return_value = True
 
-        # Verify the git worktree list command was called
-        calls = mock_run.call_args_list
-        assert any("worktree" in str(call) and "list" in str(call) for call in calls)
+        # This prints to console, so we just verify it doesn't error
+        list_worktrees()
+
+        # Verify glob was called to find *-worktrees directories
+        assert mock_scan_path.glob.called
 
     @patch("claude_wt.cli.subprocess.run")
     @patch("claude_wt.cli.os.environ.get")

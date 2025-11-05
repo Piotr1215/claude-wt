@@ -11,7 +11,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-app = App(help="Claude worktree management CLI")
+app = App(
+    help="Claude worktree management CLI",
+    version_flags=["--version", "-v"],
+)
 console = Console()
 
 
@@ -19,6 +22,32 @@ def get_worktree_base(repo_root: Path) -> Path:
     """Get the external worktree base directory (sibling to repo)."""
     repo_name = repo_root.name
     return repo_root.parent / f"{repo_name}-worktrees"
+
+
+def is_claude_wt_worktree(worktree: dict) -> bool:
+    """
+    Check if a worktree is a claude-wt worktree.
+
+    Checks both branch name (starts with 'claude-wt-') and path
+    (contains '-worktrees/claude-wt-' for external worktrees).
+
+    Parameters
+    ----------
+    worktree : dict
+        Worktree dict with 'branch' and 'path' keys
+
+    Returns
+    -------
+    bool
+        True if this is a claude-wt worktree
+    """
+    branch_name = worktree.get("branch", "")
+    wt_path = worktree.get("path", "")
+
+    return (
+        branch_name.startswith("claude-wt-")
+        or "-worktrees/claude-wt-" in wt_path
+    )
 
 
 def create_worktree_context(
@@ -119,6 +148,150 @@ def check_gitignore(repo_root: Path) -> bool:
     return False
 
 
+# Helper functions to reduce duplication
+
+
+def _list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
+    """Scan filesystem for all claude-wt worktrees.
+
+    Returns list of dicts with keys: path, repo, session
+    """
+    scan_path = Path(scan_dir).expanduser()
+
+    if not scan_path.exists():
+        return []
+
+    worktree_dirs = list(scan_path.glob("*-worktrees"))
+    all_worktrees = []
+
+    for wt_base in worktree_dirs:
+        if not wt_base.is_dir():
+            continue
+
+        for wt_path in list(wt_base.iterdir()):
+            if wt_path.is_dir() and wt_path.name.startswith("claude-wt-"):
+                repo_name = wt_base.name.replace("-worktrees", "")
+                all_worktrees.append({
+                    "path": str(wt_path),
+                    "repo": repo_name,
+                    "session": wt_path.name.replace("claude-wt-", "", 1)
+                })
+
+    return all_worktrees
+
+
+def _create_tmux_session(session_name: str, wt_path: Path) -> bool:
+    """Create and switch to a tmux session.
+
+    Returns True if successful, False otherwise.
+    """
+    in_tmux = os.environ.get("TMUX")
+
+    if not in_tmux:
+        console.print(f"[cyan]Worktree at:[/cyan] {wt_path}")
+        console.print("[yellow]Note: Command works best when run from within tmux[/yellow]")
+        return False
+
+    try:
+        # Check if session already exists
+        check_session = subprocess.run(
+            ["tmux", "has-session", "-t", session_name],
+            capture_output=True
+        )
+
+        if check_session.returncode != 0:
+            # Create new tmux session
+            subprocess.run(
+                [
+                    "tmux",
+                    "new-session",
+                    "-d",
+                    "-s",
+                    session_name,
+                    "-c",
+                    str(wt_path),
+                ],
+                check=True,
+            )
+            console.print(f"[cyan]Created tmux session:[/cyan] {session_name}")
+            console.print(f"[dim]Session working directory:[/dim] {wt_path}")
+
+        # Switch to the session
+        subprocess.run(["tmux", "switch-client", "-t", session_name])
+        console.print(f"[green]Switched to tmux session:[/green] {session_name}")
+        return True
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"[yellow]Warning: Could not create/switch to tmux session: {e}[/yellow]")
+        console.print(f"[cyan]Worktree at:[/cyan] {wt_path}")
+        return False
+
+
+def _create_worktree(repo_root: Path, branch_name: str, wt_path: Path) -> None:
+    """Create a git worktree."""
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "worktree",
+            "add",
+            "--quiet",
+            str(wt_path),
+            branch_name,
+        ],
+        check=True,
+    )
+
+
+def _select_worktree_fzf(worktrees: list[dict], prompt: str = "Select worktree") -> dict | None:
+    """Show fzf picker for worktrees.
+
+    Returns selected worktree dict or None if cancelled.
+    """
+    if not worktrees:
+        return None
+
+    # Create fzf input
+    fzf_input = []
+    for wt in sorted(worktrees, key=lambda x: (x["repo"], x["session"])):
+        exists = "[OK]" if Path(wt["path"]).exists() else "[X]"
+        fzf_input.append(f"{exists} {wt['repo']:<20} {wt['session']:<30} {wt['path']}")
+
+    # Use fzf to select
+    try:
+        result = subprocess.run(
+            [
+                "fzf",
+                "--height",
+                "40%",
+                "--reverse",
+                "--header",
+                prompt,
+                "--prompt",
+                "> ",
+            ],
+            input="\n".join(fzf_input),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        selected = result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+
+    # Parse selection
+    parts = selected.split()
+    if len(parts) < 4:
+        return None
+
+    return {
+        "path": parts[3].strip(),
+        "repo": parts[1].strip(),
+        "session": parts[2].strip()
+    }
+
+
 @app.command
 def new(
     query: str = "",
@@ -127,20 +300,18 @@ def new(
     pull: bool = False,
     print_path: bool = False,
 ):
-    """Create a new worktree and launch Claude.
+    """Create a new worktree in a tmux session.
 
     Parameters
     ----------
-    query : str
-        Query to send to Claude
     branch : str
         Source branch to create worktree from
     name : str
         Name suffix for the worktree branch
     pull : bool
-        Pull latest changes before creating worktree (default: False for speed)
+        Pull latest changes before creating worktree
     print_path : bool
-        Print worktree path to stdout for shell integration
+        Print worktree path to stdout
     """
     # Get repo root
     result = subprocess.run(
@@ -218,19 +389,7 @@ def new(
 
     # Create worktree if needed
     if not wt_path.exists():
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repo_root),
-                "worktree",
-                "add",
-                "--quiet",
-                str(wt_path),
-                branch_name,
-            ],
-            check=True,
-        )
+        _create_worktree(repo_root, branch_name, wt_path)
 
     # Create worktree context file
     create_worktree_context(wt_path, f"claude-wt-{suffix}", branch_name, repo_root)
@@ -243,9 +402,9 @@ def new(
     # Print helpful info
     panel_content = f"""[dim]Source branch:[/dim] [cyan]{source_branch}[/cyan]
 
-[green]🟢 Resume this session:[/green] [bold]claude-wt resume {suffix}[/bold]
-[blue]🧹 Delete this session:[/blue] [bold]claude-wt clean {suffix}[/bold]
-[red]🧨 Delete all sessions:[/red] [bold]claude-wt clean --all[/bold]"""
+[green]Switch to session:[/green] [bold]claude-wt switch[/bold]
+[blue]Delete this session:[/blue] [bold]claude-wt clean[/bold]
+[red]Delete all sessions:[/red] [bold]claude-wt clean --all[/bold]"""
 
     console.print(
         Panel(
@@ -256,161 +415,87 @@ def new(
         )
     )
 
-    # Check if we're in tmux and create a new session
-    in_tmux = os.environ.get("TMUX")
-
-    if in_tmux:
-        # Create a new tmux session for this worktree
-        session_name = f"wt-{suffix}"
-
-        try:
-            # Check if session already exists
-            check_session = subprocess.run(
-                ["tmux", "has-session", "-t", session_name], capture_output=True
-            )
-
-            if check_session.returncode != 0:
-                # Create new tmux session with worktree as working directory
-                subprocess.run(
-                    [
-                        "tmux",
-                        "new-session",
-                        "-d",
-                        "-s",
-                        session_name,
-                        "-c",
-                        str(wt_path),
-                    ],
-                    check=True,
-                )
-
-                console.print(f"[cyan]Created tmux session:[/cyan] {session_name}")
-                console.print(f"[dim]Session working directory:[/dim] {wt_path}")
-
-                # Launch Claude in the new session
-                claude_cmd = f"claude --add-dir {str(repo_root)}"
-                if query:
-                    claude_cmd += f' -- "{query}"'
-
-                # Send command to the new session
-                subprocess.run(
-                    ["tmux", "send-keys", "-t", session_name, claude_cmd, "Enter"]
-                )
-
-            # Switch to the new session
-            subprocess.run(["tmux", "switch-client", "-t", session_name])
-
-            console.print(f"[green]Switched to tmux session:[/green] {session_name}")
-        except subprocess.CalledProcessError as e:
-            console.print(
-                f"[yellow]Warning: Could not create/switch to tmux session: {e}[/yellow]"
-            )
-            # Fall back to launching Claude in current directory
-            claude_cmd = ["claude", "--add-dir", str(repo_root)]
-            if query:
-                claude_cmd.extend(["--", query])
-            subprocess.run(claude_cmd, cwd=wt_path)
-    else:
-        # Not in tmux, just launch Claude normally
-        claude_cmd = ["claude", "--add-dir", str(repo_root)]
-        if query:
-            claude_cmd.extend(["--", query])
-        subprocess.run(claude_cmd, cwd=wt_path)
-
-
-@app.command
-def resume(branch_name: str):
-    """Resume an existing worktree session.
-
-    Parameters
-    ----------
-    branch_name : str
-        Branch name to resume
-    """
-    try:
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-
-        # Find worktree path using git
-        full_branch_name = f"claude-wt-{branch_name}"
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        # Parse worktree list to find the matching branch
-        wt_path = None
-        current_wt = {}
-        for line in result.stdout.split("\n"):
-            if line.startswith("worktree "):
-                if current_wt and current_wt.get("branch") == full_branch_name:
-                    wt_path = Path(current_wt["path"])
-                    break
-                current_wt = {"path": line[9:]}
-            elif line.startswith("branch "):
-                current_wt["branch"] = line[7:]
-
-        # Check the last worktree entry
-        if current_wt and current_wt.get("branch") == full_branch_name:
-            wt_path = Path(current_wt["path"])
-
-        if not wt_path or not wt_path.exists():
-            console.print(
-                f"[red]Error: Worktree for branch '{branch_name}' not found[/red]"
-            )
-            raise SystemExit(1)
-
-        console.print(
-            f"[yellow]🔄 Resuming session for branch:[/yellow] [bold]{branch_name}[/bold]"
-        )
-
-        # Launch Claude with --continue to resume conversation
-        claude_cmd = ["claude", "--add-dir", str(repo_root), "--continue"]
-        subprocess.run(claude_cmd, cwd=wt_path)
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-    except Exception as e:
-        console.print(f"[red]Unexpected error: {e}[/red]")
-        raise SystemExit(1)
+    # Create and switch to tmux session
+    session_name = f"wt-{suffix}"
+    _create_tmux_session(session_name, wt_path)
 
 
 @app.command
 def clean(
     branch_name: str = "",
+    *,
     all: bool = False,
+    scan_dir: str | None = None,
 ):
     """Delete claude-wt worktrees and branches.
 
     Parameters
     ----------
     branch_name : str
-        Specific branch to clean
+        Specific branch to clean (optional - shows fzf if not provided)
     all : bool
         Clean all claude-wt sessions
+    scan_dir : str
+        Directory to scan for worktrees (default: ~/dev)
     """
     try:
-        # Require either branch_name or --all
-        if not branch_name and not all:
-            console.print(
-                "[red]Error: Must specify either a branch name or --all flag[/red]"
-            )
-            raise SystemExit(1)
+        # Use default scan dir if not provided
+        if scan_dir is None:
+            scan_dir = "~/dev"
 
         if branch_name and all:
             console.print(
                 "[red]Error: Cannot specify both branch name and --all flag[/red]"
             )
             raise SystemExit(1)
+
+        # If no branch_name and not --all, show fzf dialog
+        if not branch_name and not all:
+            # Get all worktrees
+            all_worktrees = _list_all_worktrees(scan_dir)
+
+            if not all_worktrees:
+                console.print("[yellow]No claude-wt worktrees found.[/yellow]")
+                raise SystemExit(1)
+
+            # Select worktree with fzf
+            selected_wt = _select_worktree_fzf(all_worktrees, "Select worktree to delete:")
+
+            if not selected_wt:
+                console.print("[yellow]No worktree selected[/yellow]")
+                raise SystemExit(1)
+
+            wt_path = Path(selected_wt["path"])
+            session = selected_wt["session"]
+
+            if not wt_path.exists():
+                console.print(f"[red]Error: Worktree does not exist: {wt_path}[/red]")
+                raise SystemExit(1)
+
+            # Get repo root from worktree
+            repo_root = wt_path.parent.parent / wt_path.parent.name.replace("-worktrees", "")
+
+            # Remove worktree
+            subprocess.run(
+                ["git", "-C", str(repo_root), "worktree", "remove", "--force", str(wt_path)],
+                check=True,
+            )
+            console.print(f"[green]Removed worktree:[/green] {wt_path}")
+
+            # Try to delete branch
+            branch_name = f"claude-wt-{session}"
+            try:
+                subprocess.run(
+                    ["git", "-C", str(repo_root), "branch", "-D", branch_name],
+                    check=True,
+                    capture_output=True,
+                )
+                console.print(f"[green]Deleted branch:[/green] {branch_name}")
+            except subprocess.CalledProcessError:
+                # Branch might not exist or have a different name
+                console.print(f"[yellow]Could not delete branch (may not exist): {branch_name}[/yellow]")
+
+            return
 
         # Get repo root
         result = subprocess.run(
@@ -492,14 +577,8 @@ def clean(
                         wt_path = wt.get("path", "")
                         branch_name = wt.get("branch", "")
 
-                        # Check if this is a claude-wt worktree by branch name or path
-                        # Check for external worktrees in sibling directory
-                        is_claude_wt = (
-                            branch_name.startswith("claude-wt-")
-                            or "-worktrees/claude-wt-" in wt_path
-                        )
-
-                        if is_claude_wt:
+                        # Check if this is a claude-wt worktree
+                        if is_claude_wt_worktree(wt):
                             try:
                                 subprocess.run(
                                     [
@@ -593,67 +672,38 @@ def clean(
         raise SystemExit(1)
 
 
-@app.command
-def list():
-    """List all claude-wt worktrees."""
+@app.command(name="list")
+def list_worktrees(*, scan_dir: str | None = None):
+    """List all claude-wt worktrees from all repositories.
+
+    Parameters
+    ----------
+    scan_dir : str
+        Directory to scan for *-worktrees folders (default: ~/dev)
+    """
     try:
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-        repo_name = repo_root.name
+        # Use default if not provided
+        if scan_dir is None:
+            scan_dir = "~/dev"
 
-        # Get all worktrees from git
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        # Get all worktrees
+        all_worktrees = _list_all_worktrees(scan_dir)
 
-        # Parse worktree list output
-        worktrees = []
-        current_wt = {}
-        for line in result.stdout.split("\n"):
-            if line.startswith("worktree "):
-                if current_wt:
-                    worktrees.append(current_wt)
-                current_wt = {"path": line[9:]}  # Remove 'worktree ' prefix
-            elif line.startswith("branch "):
-                current_wt["branch"] = line[7:]  # Remove 'branch ' prefix
-        if current_wt:
-            worktrees.append(current_wt)
-
-        # Filter for claude-wt worktrees
-        claude_worktrees = [
-            wt for wt in worktrees if wt.get("branch", "").startswith("claude-wt-")
-        ]
-
-        if not claude_worktrees:
+        if not all_worktrees:
             console.print("[yellow]No claude-wt worktrees found.[/yellow]")
             return
 
         # Create table
-        table = Table(
-            title=f"Claude-wt worktrees for [bold cyan]{repo_name}[/bold cyan]"
-        )
+        table = Table(title="[bold cyan]All Claude-wt worktrees[/bold cyan]")
         table.add_column("Status", style="green", justify="center")
+        table.add_column("Repository", style="magenta", min_width=15)
         table.add_column("Session", style="cyan", min_width=15)
         table.add_column("Path", style="dim", overflow="fold")
 
-        for wt in sorted(claude_worktrees, key=lambda x: x.get("branch", "")):
-            branch_name = wt.get("branch", "")
-            suffix = branch_name.replace("claude-wt-", "")
-            wt_path = wt["path"]
-
+        for wt in sorted(all_worktrees, key=lambda x: (x["repo"], x["session"])):
             # Check if worktree path still exists
-            status = "[green]✅[/green]" if Path(wt_path).exists() else "[red]❌[/red]"
-
-            table.add_row(status, suffix, wt_path)
+            status = "[green]OK[/green]" if Path(wt["path"]).exists() else "[red]X[/red]"
+            table.add_row(status, wt["repo"], wt["session"], wt["path"])
 
         console.print(table)
 
@@ -661,131 +711,54 @@ def list():
         console.print(f"[red]Error: {e}[/red]")
         raise SystemExit(1)
     except Exception as e:
+        import traceback
         console.print(f"[red]Unexpected error: {e}[/red]")
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise SystemExit(1)
 
 
 @app.command
-def switch():
-    """Quick switch between worktrees using fzf."""
+def switch(*, scan_dir: str | None = None):
+    """Quick switch between worktrees using fzf.
+
+    Parameters
+    ----------
+    scan_dir : str
+        Directory to scan for *-worktrees folders (default: ~/dev)
+    """
     try:
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
+        # Use default if not provided
+        if scan_dir is None:
+            scan_dir = "~/dev"
 
-        # Get all worktrees from git
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        # Get all worktrees
+        all_worktrees = _list_all_worktrees(scan_dir)
 
-        # Parse worktree list output
-        worktrees = []
-        current_wt = {}
-        for line in result.stdout.split("\n"):
-            if line.startswith("worktree "):
-                if current_wt:
-                    worktrees.append(current_wt)
-                current_wt = {"path": line[9:]}  # Remove 'worktree ' prefix
-            elif line.startswith("branch "):
-                current_wt["branch"] = line[7:]  # Remove 'branch ' prefix
-        if current_wt:
-            worktrees.append(current_wt)
-
-        # Filter for claude-wt worktrees
-        claude_worktrees = [
-            wt for wt in worktrees if wt.get("branch", "").startswith("claude-wt-")
-        ]
-
-        if not claude_worktrees:
+        if not all_worktrees:
             console.print("[yellow]No claude-wt worktrees found.[/yellow]")
             raise SystemExit(1)
 
-        # Create fzf input with session names and paths
-        fzf_input = []
-        for wt in sorted(claude_worktrees, key=lambda x: x.get("branch", "")):
-            branch_name = wt.get("branch", "")
-            suffix = branch_name.replace("claude-wt-", "")
-            wt_path = wt["path"]
-            exists = "✅" if Path(wt_path).exists() else "❌"
-            fzf_input.append(f"{exists} {suffix:<30} {wt_path}")
+        # Select worktree with fzf
+        selected_wt = _select_worktree_fzf(all_worktrees, "Select worktree to switch to:")
 
-        # Use fzf to select a worktree
-        try:
-            result = subprocess.run(
-                [
-                    "fzf",
-                    "--height",
-                    "40%",
-                    "--reverse",
-                    "--header",
-                    "Select worktree to resume:",
-                    "--prompt",
-                    "Session> ",
-                ],
-                input="\n".join(fzf_input),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            selected = result.stdout.strip()
-        except subprocess.CalledProcessError:
+        if not selected_wt:
             console.print("[yellow]No worktree selected[/yellow]")
             raise SystemExit(1)
 
-        # Extract suffix from selection
-        parts = selected.split()
-        if len(parts) < 2:
-            console.print("[red]Error parsing selection[/red]")
-            raise SystemExit(1)
+        wt_path = Path(selected_wt["path"])
+        suffix = selected_wt["session"]
 
-        suffix = parts[1].strip()
-
-        # Resume the selected worktree using the existing resume function
-        full_branch_name = f"claude-wt-{suffix}"
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        # Parse worktree list to find the matching branch
-        wt_path = None
-        current_wt = {}
-        for line in result.stdout.split("\n"):
-            if line.startswith("worktree "):
-                if current_wt and current_wt.get("branch") == full_branch_name:
-                    wt_path = Path(current_wt["path"])
-                    break
-                current_wt = {"path": line[9:]}
-            elif line.startswith("branch "):
-                current_wt["branch"] = line[7:]
-
-        # Check the last worktree entry
-        if current_wt and current_wt.get("branch") == full_branch_name:
-            wt_path = Path(current_wt["path"])
-
-        if not wt_path or not wt_path.exists():
-            console.print(
-                f"[red]Error: Worktree for session '{suffix}' not found[/red]"
-            )
+        if not wt_path.exists():
+            console.print(f"[red]Error: Worktree does not exist: {wt_path}[/red]")
             raise SystemExit(1)
 
         console.print(
-            f"[yellow]🔄 Switching to session:[/yellow] [bold]{suffix}[/bold]"
+            f"[yellow]Switching to session:[/yellow] [bold]{suffix}[/bold]"
         )
 
-        # Launch Claude with --continue to resume conversation
-        claude_cmd = ["claude", "--add-dir", str(repo_root), "--continue"]
-        subprocess.run(claude_cmd, cwd=wt_path)
+        # Create and switch to tmux session
+        session_name = f"wt-{suffix}"
+        _create_tmux_session(session_name, wt_path)
 
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -966,124 +939,8 @@ def init():
         raise SystemExit(1)
 
 
-@app.command
-def resume_issue(branch_name: str):
-    """Resume an issue-based worktree session.
-
-    Parameters
-    ----------
-    branch_name : str
-        Issue branch name (e.g., doc-856/fix-stuff)
-    """
-    try:
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-
-        # Find worktree path using external worktree base
-        worktree_base = get_worktree_base(repo_root)
-        wt_path = worktree_base / branch_name.replace("/", "-")
-
-        if not wt_path.exists():
-            console.print(
-                f"[red]Error: Worktree for branch '{branch_name}' not found[/red]"
-            )
-            raise SystemExit(1)
-
-        console.print(
-            f"[yellow]🔄 Resuming session for issue branch:[/yellow] [bold]{branch_name}[/bold]"
-        )
-
-        # Launch Claude with --continue to resume conversation
-        claude_cmd = ["claude", "--add-dir", str(repo_root), "--continue"]
-        subprocess.run(claude_cmd, cwd=wt_path)
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-    except Exception as e:
-        console.print(f"[red]Unexpected error: {e}[/red]")
-        raise SystemExit(1)
 
 
-@app.command
-def clean_issue(branch_name: str):
-    """Delete an issue-based worktree and optionally its branch.
-
-    Parameters
-    ----------
-    branch_name : str
-        Issue branch name to clean (e.g., doc-856/fix-stuff)
-    """
-    try:
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-
-        # Find worktree path using external worktree base
-        worktree_base = get_worktree_base(repo_root)
-        wt_path = worktree_base / branch_name.replace("/", "-")
-
-        # Remove worktree
-        if wt_path.exists():
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "worktree",
-                    "remove",
-                    "--force",
-                    str(wt_path),
-                ],
-                check=True,
-            )
-            console.print(f"[green]✅ Removed worktree:[/green] {wt_path}")
-        else:
-            console.print(f"[yellow]⚠️  Worktree for {branch_name} not found[/yellow]")
-
-        # Ask if they want to delete the branch
-        delete_branch = (
-            console.input(
-                f"[yellow]Do you want to delete the branch '{branch_name}'? (y/N):[/yellow] "
-            ).lower()
-            == "y"
-        )
-
-        if delete_branch:
-            try:
-                subprocess.run(
-                    ["git", "-C", str(repo_root), "branch", "-D", branch_name],
-                    check=True,
-                )
-                console.print(f"[green]✅ Deleted branch:[/green] {branch_name}")
-            except subprocess.CalledProcessError:
-                console.print(
-                    f"[yellow]⚠️  Could not delete branch {branch_name} (may be checked out elsewhere)[/yellow]"
-                )
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-    except Exception as e:
-        console.print(f"[red]Unexpected error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@app.command
-def version():
-    """Show version information."""
-    console.print("claude-wt 0.1.0")
 
 
 @app.command
@@ -1363,240 +1220,6 @@ def linear_issue(
         raise SystemExit(1)
 
 
-@app.command
-def from_issue(query: str = ""):
-    """Create a worktree from a Linear issue and launch Claude.
-
-    Parameters
-    ----------
-    query : str
-        Optional query to send to Claude
-    """
-    try:
-        # Check for required environment variables
-        if not os.environ.get("LINEAR_API_KEY"):
-            console.print(
-                "[red]Error: LINEAR_API_KEY environment variable not set[/red]"
-            )
-            raise SystemExit(1)
-
-        if not os.environ.get("LINEAR_USER_ID"):
-            console.print(
-                "[red]Error: LINEAR_USER_ID environment variable not set[/red]"
-            )
-            raise SystemExit(1)
-
-        # Get repo root
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-
-        # Worktrees are in sibling directory, so gitignore check is optional
-
-        # Fetch Linear issues
-        console.print("[cyan]Fetching Linear issues...[/cyan]")
-
-        graphql_query = {
-            "query": f"""query {{ 
-                user(id: "{os.environ["LINEAR_USER_ID"]}") {{ 
-                    id 
-                    name 
-                    assignedIssues(filter: {{ state: {{ name: {{ nin: ["Released", "Canceled"] }} }} }}) {{ 
-                        nodes {{ 
-                            id 
-                            title 
-                            url 
-                        }} 
-                    }} 
-                }} 
-            }}"""
-        }
-
-        # Use curl to fetch issues (matching the bfi script approach)
-        curl_cmd = [
-            "curl",
-            "-s",
-            "-X",
-            "POST",
-            "-H",
-            "Content-Type: application/json",
-            "-H",
-            f"Authorization: {os.environ['LINEAR_API_KEY']}",
-            "--data",
-            json.dumps(graphql_query),
-            "https://api.linear.app/graphql",
-        ]
-
-        result = subprocess.run(curl_cmd, capture_output=True, text=True, check=True)
-
-        try:
-            response = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            console.print("[red]Error: Invalid JSON response from Linear API[/red]")
-            raise SystemExit(1)
-
-        if "errors" in response:
-            console.print(f"[red]Error from Linear API: {response['errors']}[/red]")
-            raise SystemExit(1)
-
-        issues = (
-            response.get("data", {})
-            .get("user", {})
-            .get("assignedIssues", {})
-            .get("nodes", [])
-        )
-
-        if not issues:
-            console.print("[yellow]No assigned issues found[/yellow]")
-            raise SystemExit(1)
-
-        # Process all issues without filtering by existing branches
-        filtered_issues = []
-        for issue in issues:
-            # Extract issue ID from URL (e.g., ABC-123)
-            issue_id = (
-                issue["url"].split("/")[-2].replace("[", "").replace("]", "").lower()
-            )
-
-            filtered_issues.append(
-                {
-                    "id": issue_id,
-                    "title": issue["title"],
-                    "url": issue["url"],
-                    "display": f"{issue['title']} ({issue['url']})",
-                }
-            )
-
-        if not filtered_issues:
-            console.print("[yellow]No assigned issues found[/yellow]")
-            raise SystemExit(1)
-
-        # Use fzf to select an issue
-        fzf_input = "\n".join([issue["display"] for issue in filtered_issues])
-
-        try:
-            result = subprocess.run(
-                ["fzf", "--height", "40%", "--reverse"],
-                input=fzf_input,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            selected_display = result.stdout.strip()
-        except subprocess.CalledProcessError:
-            console.print("[yellow]No issue selected[/yellow]")
-            raise SystemExit(1)
-
-        # Find the selected issue
-        selected_issue = None
-        for issue in filtered_issues:
-            if issue["display"] == selected_display:
-                selected_issue = issue
-                break
-
-        if not selected_issue:
-            console.print("[red]Error: Could not find selected issue[/red]")
-            raise SystemExit(1)
-
-        # Prompt for branch name suffix
-        console.print(f"\n[cyan]Selected issue:[/cyan] {selected_issue['id']}")
-        branch_suffix = console.input("[green]Enter a name for your branch: [/green]")
-
-        if not branch_suffix:
-            console.print("[yellow]No branch name provided[/yellow]")
-            raise SystemExit(1)
-
-        # Create the branch name (issue-id/branch-suffix)
-        issue_branch_name = f"{selected_issue['id']}/{branch_suffix}"
-
-        # Switch to main and pull latest
-        subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
-        subprocess.run(["git", "-C", str(repo_root), "checkout", "main"], check=True)
-        subprocess.run(
-            ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True
-        )
-
-        # Create the issue branch if it doesn't exist (but don't checkout)
-        try:
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "show-ref",
-                    "--verify",
-                    "--quiet",
-                    f"refs/heads/{issue_branch_name}",
-                ],
-                check=True,
-            )
-            console.print(
-                f"[yellow]Branch {issue_branch_name} already exists, using it[/yellow]"
-            )
-        except subprocess.CalledProcessError:
-            # Branch doesn't exist, create it from main without checking out
-            subprocess.run(
-                ["git", "-C", str(repo_root), "branch", issue_branch_name, "main"],
-                check=True,
-            )
-
-        # Setup worktree path using external worktree base
-        worktree_base = get_worktree_base(repo_root)
-        worktree_base.mkdir(parents=True, exist_ok=True)
-        wt_path = worktree_base / issue_branch_name.replace("/", "-")
-
-        # Create worktree directly from the issue branch
-        if not wt_path.exists():
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "worktree",
-                    "add",
-                    "--quiet",
-                    str(wt_path),
-                    issue_branch_name,
-                ],
-                check=True,
-            )
-
-        # Print helpful info
-        panel_content = f"""[dim]Issue:[/dim] [cyan]{selected_issue["id"]}[/cyan] - {selected_issue["title"]}
-[dim]Branch:[/dim] [cyan]{issue_branch_name}[/cyan]
-[dim]Worktree:[/dim] [cyan]{wt_path.name}[/cyan]
-
-[green]🟢 Resume this session:[/green] [bold]claude-wt resume-issue {selected_issue["id"]}/{branch_suffix}[/bold]
-[blue]🧹 Delete this session:[/blue] [bold]claude-wt clean-issue {selected_issue["id"]}/{branch_suffix}[/bold]"""
-
-        console.print(
-            Panel(
-                panel_content,
-                title="[bold cyan]Session Created from Linear Issue[/bold cyan]",
-                border_style="cyan",
-                expand=False,
-            )
-        )
-
-        # Prepare initial query with issue context
-        initial_query = f"I'm working on Linear issue {selected_issue['id']}: {selected_issue['title']}. URL: {selected_issue['url']}"
-        if query:
-            initial_query = f"{initial_query}\n\n{query}"
-
-        # Launch Claude with issue context
-        claude_cmd = ["claude", "--add-dir", str(repo_root), "--", initial_query]
-        subprocess.run(claude_cmd, cwd=wt_path)
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-    except Exception as e:
-        console.print(f"[red]Unexpected error: {e}[/red]")
-        raise SystemExit(1)
 
 
 @app.command
