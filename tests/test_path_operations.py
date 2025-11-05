@@ -89,7 +89,7 @@ class TestPathOperations:
 
         assert result is True
 
-    @patch("claude_wt.cli.Path")
+    @patch("claude_wt.core.Path")
     def test_check_gitignore_finds_pattern_in_global(self, mock_path):
         """Test check_gitignore finds patterns in global .gitignore."""
         mock_repo = Mock()

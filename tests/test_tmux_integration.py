@@ -58,10 +58,16 @@ class TestTmuxIntegration:
         assert len(switch_client_cmds) > 0
         assert any("wt-tmux-test" in str(cmd) for cmd in new_session_cmds)
 
+    @patch("shutil.which")
     @patch("os.environ.get")
     @patch("claude_wt.cli.subprocess.run")
-    def test_new_no_tmux_no_window_setting(self, mock_run, mock_environ_get):
+    def test_new_no_tmux_no_window_setting(
+        self, mock_run, mock_environ_get, mock_which
+    ):
         """Test that 'new' doesn't set tmux window path when not in tmux."""
+
+        # Mock claude executable
+        mock_which.return_value = "/usr/bin/claude"
 
         # Setup environment to simulate NOT being in tmux
         def env_side_effect(key, default=None):
@@ -185,8 +191,12 @@ class TestTmuxIntegration:
                                 in printed_path
                             )
 
+    @patch("claude_wt.worktree.subprocess.run")
+    @patch("claude_wt.tmux.subprocess.run")
     @patch("claude_wt.cli.subprocess.run")
-    def test_no_pull_flag_skips_pull(self, mock_run):
+    def test_no_pull_flag_skips_pull(
+        self, mock_cli_run, mock_tmux_run, mock_worktree_run
+    ):
         """Test that --no-pull flag skips the pull operation."""
         # Track git commands
         git_commands = []
@@ -209,13 +219,19 @@ class TestTmuxIntegration:
             else:
                 return Mock(returncode=0, stdout="")
 
-        mock_run.side_effect = run_side_effect
+        mock_cli_run.side_effect = run_side_effect
+        mock_tmux_run.return_value = Mock(returncode=0)
+        mock_worktree_run.side_effect = run_side_effect
 
         with patch("claude_wt.core.check_gitignore", return_value=True):
             with patch("claude_wt.cli.Path.exists", return_value=False):
                 with patch("claude_wt.cli.Path.mkdir"):
                     with patch("claude_wt.worktree.create_worktree_context"):
-                        new(name="no-pull-test", pull=False)
+                        with patch(
+                            "claude_wt.tmux.shutil.which",
+                            return_value="/usr/bin/claude",
+                        ):
+                            new(name="no-pull-test", pull=False)
 
         # Verify that git pull and fetch were not called but switch was
         assert not any("git pull" in cmd or " pull " in cmd for cmd in git_commands), (

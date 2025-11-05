@@ -1,10 +1,10 @@
 """Main CLI entry point for claude-wt."""
 
 import subprocess
-import sys
 from pathlib import Path
+from typing import Annotated
 
-from cyclopts import App
+from cyclopts import App, Parameter
 from rich.console import Console
 from rich.panel import Panel
 
@@ -20,7 +20,7 @@ from .worktree import (
 
 app = App(
     help="Manages isolated git worktrees for parallel Claude Code sessions.\n\n"
-         "Use 'claude-wt COMMAND --help' for detailed command options.",
+    "Use 'claude-wt COMMAND --help' for detailed command options.",
     version_flags=["--version", "-v"],
 )
 console = Console()
@@ -33,6 +33,7 @@ def new(
     name: str = "",
     pull: bool = False,
     print_path: bool = False,
+    prompt_file: Annotated[str, Parameter(name=["-f", "--prompt-file"])] = "",
 ):
     """Create new worktree: new [name] [--branch BRANCH] [--pull]
 
@@ -51,9 +52,23 @@ def new(
         Pull latest changes before creating worktree (default: False)
     print_path : bool
         Print worktree path to stdout only (for scripting)
+    prompt_file : str
+        Path to file containing prompt (overrides query if provided)
     """
     try:
-        create_new_worktree(query, branch, name, pull, print_path)
+        # Read prompt from file if provided
+        final_query = query
+        if prompt_file:
+            from pathlib import Path
+
+            prompt_path = Path(prompt_file).expanduser()
+            if not prompt_path.exists():
+                console.print(f"[red]Error: Prompt file not found: {prompt_file}[/red]")
+                raise SystemExit(1)
+            final_query = prompt_path.read_text().strip()
+            console.print(f"[cyan]Loaded prompt from:[/cyan] {prompt_file}")
+
+        create_new_worktree(final_query, branch, name, pull, print_path)
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise SystemExit(1)
@@ -112,14 +127,15 @@ def list_worktrees(*, scan_dir: str | None = None):
         raise SystemExit(1)
     except Exception as e:
         import traceback
+
         console.print(f"[red]Unexpected error: {e}[/red]")
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise SystemExit(1)
 
 
 @app.command
-def switch(*, scan_dir: str | None = None):
-    """Switch worktrees: switch [--scan-dir DIR]
+def switch(*, scan_dir: str | None = None, continue_session: bool = False):
+    """Switch worktrees: switch [--scan-dir DIR] [--continue]
 
     Interactively select and switch to a worktree session in tmux.
     Must be run from within a tmux session.
@@ -128,9 +144,11 @@ def switch(*, scan_dir: str | None = None):
     ----------
     scan_dir : str
         Directory to scan for *-worktrees folders (default: ~/dev)
+    continue_session : bool
+        Resume previous Claude conversation with --continue flag
     """
     try:
-        switch_worktree(scan_dir)
+        switch_worktree(scan_dir, continue_session)
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise SystemExit(1)
@@ -182,20 +200,14 @@ def status():
 
         # Parse worktrees to find if current directory is a worktree
         in_worktree = False
-        worktree_branch = None
-        main_repo_path = None
 
         current_wt = {}
         for line in result.stdout.split("\n"):
             if line.startswith("worktree "):
                 if current_wt:
                     wt_path = Path(current_wt.get("path", ""))
-                    if wt_path == repo_root:
-                        # This is the main repo
-                        main_repo_path = wt_path
-                    elif wt_path == cwd or cwd.is_relative_to(wt_path):
+                    if wt_path == cwd or cwd.is_relative_to(wt_path):
                         in_worktree = True
-                        worktree_branch = current_wt.get("branch", "")
                 current_wt = {"path": line[9:]}
             elif line.startswith("branch "):
                 current_wt["branch"] = line[7:]
@@ -203,11 +215,8 @@ def status():
         # Check last entry
         if current_wt:
             wt_path = Path(current_wt.get("path", ""))
-            if wt_path == repo_root:
-                main_repo_path = wt_path
-            elif wt_path == cwd or cwd.is_relative_to(wt_path):
+            if wt_path == cwd or cwd.is_relative_to(wt_path):
                 in_worktree = True
-                worktree_branch = current_wt.get("branch", "")
 
         # Build status panel
         is_claude_wt = current_branch.startswith("claude-wt-")
@@ -215,7 +224,7 @@ def status():
         if is_claude_wt and in_worktree:
             session_name = current_branch.replace("claude-wt-", "")
             status_icon = "🟢"
-            status_text = f"[green]Active Claude worktree session[/green]"
+            status_text = "[green]Active Claude worktree session[/green]"
             panel_content = f"""{status_text}
 
 [dim]Session:[/dim] [cyan]{session_name}[/cyan]
@@ -340,7 +349,11 @@ def install_completion(shell: str = "zsh"):
         import importlib.resources as pkg_resources
 
         # Get completion file content from package
-        completion_content = pkg_resources.files("claude_wt").joinpath("../completions/_claude-wt").read_text()
+        completion_content = (
+            pkg_resources.files("claude_wt")
+            .joinpath("../completions/_claude-wt")
+            .read_text()
+        )
 
         # Determine installation path
         completion_dir = Path.home() / ".zsh" / "completions"
@@ -352,7 +365,9 @@ def install_completion(shell: str = "zsh"):
         # Write completion file
         completion_file.write_text(completion_content)
 
-        console.print(f"[green]✅ Installed zsh completion to:[/green] {completion_file}")
+        console.print(
+            f"[green]✅ Installed zsh completion to:[/green] {completion_file}"
+        )
         console.print("\n[yellow]Next steps:[/yellow]")
         console.print("1. Add to your ~/.zshrc (if not already present):")
         console.print("   [cyan]fpath=(~/.zsh/completions $fpath)[/cyan]")
@@ -365,7 +380,9 @@ def install_completion(shell: str = "zsh"):
     except Exception as e:
         console.print(f"[red]Error installing completion: {e}[/red]")
         console.print("\n[yellow]Manual installation:[/yellow]")
-        console.print("See: https://github.com/anthropics/claude-wt/tree/main/completions")
+        console.print(
+            "See: https://github.com/anthropics/claude-wt/tree/main/completions"
+        )
         raise SystemExit(1)
 
 

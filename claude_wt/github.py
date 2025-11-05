@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from .core import get_worktree_base, create_worktree_context
+from .core import create_worktree_context, get_worktree_base
 
 console = Console()
 
@@ -101,13 +101,28 @@ def handle_pr_interactive(pr_number: str = "", query: str = ""):
             # Branch exists in origin (same-repo PR)
             # Create local branch tracking origin/branch if it doesn't exist
             check_branch = subprocess.run(
-                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{pr_branch}"],
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "show-ref",
+                    "--verify",
+                    f"refs/heads/{pr_branch}",
+                ],
                 capture_output=True,
             )
             if check_branch.returncode != 0:
                 # Local branch doesn't exist, create it tracking origin
                 subprocess.run(
-                    ["git", "-C", str(repo_root), "branch", "--track", pr_branch, f"origin/{pr_branch}"],
+                    [
+                        "git",
+                        "-C",
+                        str(repo_root),
+                        "branch",
+                        "--track",
+                        pr_branch,
+                        f"origin/{pr_branch}",
+                    ],
                     check=True,
                     capture_output=True,
                 )
@@ -115,7 +130,14 @@ def handle_pr_interactive(pr_number: str = "", query: str = ""):
             # Branch doesn't exist in origin (fork PR)
             # Fetch PR and create a local branch
             subprocess.run(
-                ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head:{pr_branch}"],
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "fetch",
+                    "origin",
+                    f"pull/{pr_number}/head:{pr_branch}",
+                ],
                 check=True,
                 capture_output=True,
             )
@@ -173,7 +195,14 @@ def handle_pr_interactive(pr_number: str = "", query: str = ""):
             initial_query = f"{initial_query}\n\nAdditional context: {query}"
 
         # Launch Claude with PR context
-        claude_cmd = ["claude", "--add-dir", str(repo_root), "--", initial_query]
+        claude_cmd = [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+            str(repo_root),
+            "--",
+            initial_query,
+        ]
         subprocess.run(claude_cmd, cwd=wt_path)
 
     except subprocess.CalledProcessError as e:
@@ -233,13 +262,13 @@ def handle_pr_noninteractive(
         linear_issue_id = None
 
         # Try branch name first (e.g., doc-975-feature, DOC-975-feature)
-        branch_match = re.search(r'(doc|DOC|DEV|dev|ENG|eng)-(\d+)', pr_branch)
+        branch_match = re.search(r"(doc|DOC|DEV|dev|ENG|eng)-(\d+)", pr_branch)
         if branch_match:
             linear_issue_id = f"{branch_match.group(1).upper()}-{branch_match.group(2)}"
 
         # Try PR body (e.g., "Fixes DOC-975" or Linear URL)
         if not linear_issue_id and pr_body:
-            body_match = re.search(r'(DOC|DEV|ENG)-\d+', pr_body, re.IGNORECASE)
+            body_match = re.search(r"(DOC|DEV|ENG)-\d+", pr_body, re.IGNORECASE)
             if body_match:
                 linear_issue_id = body_match.group(0).upper()
 
@@ -267,13 +296,28 @@ def handle_pr_noninteractive(
             # Branch exists in origin (same-repo PR)
             # Create local branch tracking origin/branch if it doesn't exist
             check_branch = subprocess.run(
-                ["git", "-C", str(repo_root), "show-ref", "--verify", f"refs/heads/{pr_branch}"],
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "show-ref",
+                    "--verify",
+                    f"refs/heads/{pr_branch}",
+                ],
                 capture_output=True,
             )
             if check_branch.returncode != 0:
                 # Local branch doesn't exist, create it tracking origin
                 subprocess.run(
-                    ["git", "-C", str(repo_root), "branch", "--track", pr_branch, f"origin/{pr_branch}"],
+                    [
+                        "git",
+                        "-C",
+                        str(repo_root),
+                        "branch",
+                        "--track",
+                        pr_branch,
+                        f"origin/{pr_branch}",
+                    ],
                     check=True,
                     capture_output=True,
                 )
@@ -281,7 +325,14 @@ def handle_pr_noninteractive(
             # Branch doesn't exist in origin (fork PR)
             # Fetch PR and create a local branch
             subprocess.run(
-                ["git", "-C", str(repo_root), "fetch", "origin", f"pull/{pr_number}/head:{pr_branch}"],
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "fetch",
+                    "origin",
+                    f"pull/{pr_number}/head:{pr_branch}",
+                ],
                 check=True,
                 capture_output=True,
             )
@@ -382,7 +433,7 @@ def handle_pr_noninteractive(
             initial_prompt = "\n\n".join(prompt_parts)
 
             # Launch Claude in the worktree with multi-command prompt
-            claude_cmd = f'claude --add-dir {wt_path} -- "{initial_prompt}"'
+            claude_cmd = f'claude --dangerously-skip-permissions --add-dir {wt_path} -- "{initial_prompt}"'
             subprocess.run(
                 [
                     "tmux",

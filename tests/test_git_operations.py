@@ -12,7 +12,7 @@ import pytest
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from claude_wt.cli import clean, new, list_worktrees
+from claude_wt.cli import clean, list_worktrees, new
 
 
 class TestGitOperations:
@@ -273,7 +273,7 @@ branch main
 
         mock_run.return_value = Mock(stdout="/home/user/repo", returncode=0)
 
-        with patch("claude_wt.core.check_gitignore", return_value=True):
+        with patch("claude_wt.cli.check_gitignore", return_value=True):
             # Should not raise an error, just print success message
             init()
 

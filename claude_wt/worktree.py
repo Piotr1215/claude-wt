@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from .core import get_worktree_base, is_claude_wt_worktree, create_worktree_context
+from .core import create_worktree_context, get_worktree_base, is_claude_wt_worktree
 from .tmux import create_tmux_session
 
 console = Console()
@@ -33,16 +33,20 @@ def list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
         for wt_path in list(wt_base.iterdir()):
             if wt_path.is_dir() and wt_path.name.startswith("claude-wt-"):
                 repo_name = wt_base.name.replace("-worktrees", "")
-                all_worktrees.append({
-                    "path": str(wt_path),
-                    "repo": repo_name,
-                    "session": wt_path.name.replace("claude-wt-", "", 1)
-                })
+                all_worktrees.append(
+                    {
+                        "path": str(wt_path),
+                        "repo": repo_name,
+                        "session": wt_path.name.replace("claude-wt-", "", 1),
+                    }
+                )
 
     return all_worktrees
 
 
-def select_worktree_fzf(worktrees: list[dict], prompt: str = "Select worktree") -> dict | None:
+def select_worktree_fzf(
+    worktrees: list[dict], prompt: str = "Select worktree"
+) -> dict | None:
     """Show fzf picker for worktrees.
 
     Returns selected worktree dict or None if cancelled.
@@ -86,7 +90,7 @@ def select_worktree_fzf(worktrees: list[dict], prompt: str = "Select worktree") 
     return {
         "path": parts[3].strip(),
         "repo": parts[1].strip(),
-        "session": parts[2].strip()
+        "session": parts[2].strip(),
     }
 
 
@@ -215,9 +219,9 @@ def create_new_worktree(
         )
     )
 
-    # Create and switch to tmux session
+    # Create and switch to tmux session and launch Claude
     session_name = f"wt-{suffix}"
-    create_tmux_session(session_name, wt_path)
+    create_tmux_session(session_name, wt_path, repo_root, query, resume=False)
 
 
 def list_worktrees_table(scan_dir: str | None = None):
@@ -248,8 +252,16 @@ def list_worktrees_table(scan_dir: str | None = None):
     console.print(table)
 
 
-def switch_worktree(scan_dir: str | None = None):
-    """Quick switch between worktrees using fzf."""
+def switch_worktree(scan_dir: str | None = None, continue_session: bool = False):
+    """Quick switch between worktrees using fzf.
+
+    Parameters
+    ----------
+    scan_dir : str | None
+        Directory to scan for worktrees (default: ~/dev)
+    continue_session : bool
+        If True, resume Claude conversation with --continue flag
+    """
     # Use default if not provided
     if scan_dir is None:
         scan_dir = "~/dev"
@@ -275,13 +287,21 @@ def switch_worktree(scan_dir: str | None = None):
         console.print(f"[red]Error: Worktree does not exist: {wt_path}[/red]")
         raise SystemExit(1)
 
-    console.print(
-        f"[yellow]Switching to session:[/yellow] [bold]{suffix}[/bold]"
-    )
+    if continue_session:
+        console.print(
+            f"[yellow]Switching to session (resuming):[/yellow] [bold]{suffix}[/bold]"
+        )
+    else:
+        console.print(f"[yellow]Switching to session:[/yellow] [bold]{suffix}[/bold]")
+
+    # Get repo root from worktree parent
+    repo_root = wt_path.parent.parent / wt_path.parent.name.replace("-worktrees", "")
 
     # Create and switch to tmux session
     session_name = f"wt-{suffix}"
-    create_tmux_session(session_name, wt_path)
+    create_tmux_session(
+        session_name, wt_path, repo_root, query="", resume=continue_session
+    )
 
 
 def clean_worktrees(
@@ -324,11 +344,21 @@ def clean_worktrees(
             raise SystemExit(1)
 
         # Get repo root from worktree
-        repo_root = wt_path.parent.parent / wt_path.parent.name.replace("-worktrees", "")
+        repo_root = wt_path.parent.parent / wt_path.parent.name.replace(
+            "-worktrees", ""
+        )
 
         # Remove worktree
         subprocess.run(
-            ["git", "-C", str(repo_root), "worktree", "remove", "--force", str(wt_path)],
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "worktree",
+                "remove",
+                "--force",
+                str(wt_path),
+            ],
             check=True,
         )
         console.print(f"[green]Removed worktree:[/green] {wt_path}")
@@ -344,7 +374,9 @@ def clean_worktrees(
             console.print(f"[green]Deleted branch:[/green] {branch_name}")
         except subprocess.CalledProcessError:
             # Branch might not exist or have a different name
-            console.print(f"[yellow]Could not delete branch (may not exist): {branch_name}[/yellow]")
+            console.print(
+                f"[yellow]Could not delete branch (may not exist): {branch_name}[/yellow]"
+            )
 
         return
 
@@ -387,9 +419,7 @@ def clean_worktrees(
             )
             console.print(f"[green]✅ Deleted branch:[/green] {full_branch_name}")
         except subprocess.CalledProcessError:
-            console.print(
-                f"[yellow]⚠️  Branch {full_branch_name} not found[/yellow]"
-            )
+            console.print(f"[yellow]⚠️  Branch {full_branch_name} not found[/yellow]")
     else:
         # Clean all claude-wt branches/worktrees
         with console.status("[bold cyan]Cleaning all claude-wt sessions..."):

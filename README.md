@@ -12,11 +12,11 @@ Manage multiple Claude Code sessions in parallel using git worktrees. Fast sessi
 
 - Python 3.12+
 - Git with worktree support
+- [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) (launches automatically in each worktree)
 - [fzf](https://github.com/junegunn/fzf) (for `switch` and `clean` commands)
 
 Optional:
-- tmux (for automatic session management)
-- Claude CLI (if you want to launch Claude automatically)
+- tmux (for automatic session management - highly recommended)
 
 ### Install
 
@@ -32,11 +32,17 @@ uvx claude-wt new "implement auth"
 ## Quick Start
 
 ```bash
-# Create new session
+# Create new session (launches Claude with your query)
 claude-wt new "implement user authentication"
 
-# Switch between sessions
+# Create session with prompt from file
+claude-wt new my-feature -f ~/prompts/detailed-task.txt
+
+# Switch between sessions (launches fresh Claude session by default)
 claude-wt switch
+
+# Switch and resume previous conversation
+claude-wt switch --continue
 
 # List active sessions
 claude-wt list
@@ -49,15 +55,22 @@ claude-wt clean
 
 ### Core Workflow
 
-**`new [name]`** - Create worktree session
+**`new [name]`** - Create worktree session and launch Claude
 ```bash
-claude-wt new "fix parser"              # Timestamped branch
+claude-wt new "fix parser"              # Launches Claude with query
 claude-wt new --name parser-fix         # Named branch
 claude-wt new --branch develop          # From specific branch
 claude-wt new --pull                    # Pull latest first
+claude-wt new task -f ~/prompt.txt      # Load prompt from file (-f or --prompt-file)
 ```
 
-**`switch`** - Switch sessions (fzf picker)
+Claude is launched with `--dangerously-skip-permissions --add-dir <repo>` for automated workflows.
+
+**`switch [--continue]`** - Switch sessions (fzf picker)
+```bash
+claude-wt switch              # Fresh Claude session (default)
+claude-wt switch --continue   # Resume previous conversation
+```
 
 **`list`** - Show all worktrees
 
@@ -103,13 +116,15 @@ claude-wt clean --<TAB>      # Shows options
 
 ## How It Works
 
-Creates git worktrees in a sibling directory `{repo-name}-worktrees/`. Each worktree gets its own branch and runs in a dedicated tmux session.
+Creates git worktrees in a sibling directory `{repo-name}-worktrees/`. Each worktree gets its own branch, runs in a dedicated tmux session, and automatically launches Claude Code.
 
 Benefits:
+- **Auto-launches Claude** - No manual setup needed
+- **Parallel sessions** - Work on multiple features simultaneously
 - No git pull delays - sessions start instantly
 - No conflicts - each session is isolated
 - Clean history - main branch stays pristine
-- Fast switching - fzf fuzzy search
+- Fast switching - fzf fuzzy search, fresh Claude session each switch
 - Automatic cleanup - one command removes everything
 
 ## Tmux Integration
@@ -117,6 +132,7 @@ Benefits:
 When run from tmux:
 - Creates dedicated session per worktree
 - Automatically switches to new session
+- Launches Claude Code in the session
 - All panes/windows start in worktree directory
 
 ```bash
@@ -124,7 +140,10 @@ claude-wt new "auth feature" --name auth
 # Creates: ../repo-worktrees/claude-wt-auth/
 # Tmux session: wt-auth
 # Auto-switches to session
+# Launches: claude --dangerously-skip-permissions --add-dir <repo> -- "auth feature"
 ```
+
+When not in tmux, Claude launches directly in the current terminal.
 
 ## Development
 

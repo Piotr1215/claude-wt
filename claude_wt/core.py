@@ -31,10 +31,7 @@ def is_claude_wt_worktree(worktree: dict) -> bool:
     branch_name = worktree.get("branch", "")
     wt_path = worktree.get("path", "")
 
-    return (
-        branch_name.startswith("claude-wt-")
-        or "-worktrees/claude-wt-" in wt_path
-    )
+    return branch_name.startswith("claude-wt-") or "-worktrees/claude-wt-" in wt_path
 
 
 def create_worktree_context(
@@ -116,6 +113,7 @@ def check_gitignore(repo_root: Path) -> bool:
     # Also check if git is configured to use a different global gitignore
     try:
         import subprocess
+
         result = subprocess.run(
             ["git", "config", "--global", "core.excludesfile"],
             capture_output=True,

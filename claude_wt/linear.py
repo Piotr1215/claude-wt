@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .core import get_worktree_base, create_worktree_context
+from .core import create_worktree_context, get_worktree_base
 
 
 def handle_linear_issue(
@@ -254,8 +254,10 @@ def handle_linear_issue(
                 )
 
                 # Launch Claude with issue context
-                initial_prompt = f"Working on issue {issue_id} in worktree at {worktree_path}"
-                claude_cmd = f'claude --add-dir {worktree_path} -- "{initial_prompt}"'
+                initial_prompt = (
+                    f"Working on issue {issue_id} in worktree at {worktree_path}"
+                )
+                claude_cmd = f'claude --dangerously-skip-permissions --add-dir {worktree_path} -- "{initial_prompt}"'
                 subprocess.run(
                     [
                         "tmux",
