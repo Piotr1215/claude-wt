@@ -320,6 +320,56 @@ def init():
 
 
 @app.command
+def install_completion(shell: str = "zsh"):
+    """Install shell completion: install-completion [--shell SHELL]
+
+    Installs shell completion for claude-wt. Currently supports zsh.
+
+    Parameters
+    ----------
+    shell : str
+        Shell to install for (default: zsh)
+    """
+    if shell != "zsh":
+        console.print(f"[red]Error: {shell} completions not yet supported[/red]")
+        console.print("[yellow]Currently supported: zsh[/yellow]")
+        console.print("[dim]Contributions welcome for bash/fish![/dim]")
+        raise SystemExit(1)
+
+    try:
+        import importlib.resources as pkg_resources
+
+        # Get completion file content from package
+        completion_content = pkg_resources.files("claude_wt").joinpath("../completions/_claude-wt").read_text()
+
+        # Determine installation path
+        completion_dir = Path.home() / ".zsh" / "completions"
+        completion_file = completion_dir / "_claude-wt"
+
+        # Create directory if needed
+        completion_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write completion file
+        completion_file.write_text(completion_content)
+
+        console.print(f"[green]✅ Installed zsh completion to:[/green] {completion_file}")
+        console.print("\n[yellow]Next steps:[/yellow]")
+        console.print("1. Add to your ~/.zshrc (if not already present):")
+        console.print("   [cyan]fpath=(~/.zsh/completions $fpath)[/cyan]")
+        console.print("   [cyan]autoload -Uz compinit && compinit[/cyan]")
+        console.print("\n2. Reload your shell:")
+        console.print("   [cyan]exec zsh[/cyan]")
+        console.print("\n3. Test it:")
+        console.print("   [cyan]claude-wt <TAB>[/cyan]")
+
+    except Exception as e:
+        console.print(f"[red]Error installing completion: {e}[/red]")
+        console.print("\n[yellow]Manual installation:[/yellow]")
+        console.print("See: https://github.com/anthropics/claude-wt/tree/main/completions")
+        raise SystemExit(1)
+
+
+@app.command
 def linear_issue(
     issue_id: str,
     repo_path: str = ".",

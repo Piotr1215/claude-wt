@@ -23,6 +23,15 @@ Homepage = "https://github.com/jlowin/claude-wt"
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["claude_wt"]
+
+[tool.hatch.build]
+include = [
+    "claude_wt/**/*.py",
+    "completions/_claude-wt",
+]
+
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 

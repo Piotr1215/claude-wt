@@ -152,7 +152,7 @@ jobs:
 
       - name: Test CLI commands
         run: |
-          claude-wt version
+          claude-wt --version
           claude-wt --help
           claude-wt list --help
 

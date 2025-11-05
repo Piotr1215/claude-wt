@@ -164,7 +164,34 @@ tmux switch-client -t wt-auth
 
 ## Shell Integration
 
-**New!** Add convenient aliases and functions to your shell. Source the integration script in your `~/.bashrc` or `~/.zshrc`:
+### Zsh Completions
+
+**New!** Tab completion for all commands and flags:
+
+```bash
+# Easy install (recommended)
+claude-wt install-completion
+
+# Then add to ~/.zshrc if not already present:
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+
+# Reload shell
+exec zsh
+```
+
+Or install manually from the repo - see [completions/README.md](completions/README.md) for details.
+
+Now enjoy smart completions:
+```bash
+claude-wt <TAB>           # Shows all commands
+claude-wt new --<TAB>     # Shows all flags for 'new'
+claude-wt clean --<TAB>   # Shows flags with descriptions
+```
+
+### Aliases & Functions
+
+Add convenient aliases and functions to your shell. Source the integration script in your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 source /path/to/claude-wt/shell-integration.sh
