@@ -12,7 +12,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 app = App(
-    help="Claude worktree management CLI",
+    help="Manages isolated git worktrees for parallel Claude Code sessions.\n\n"
+         "Use 'claude-wt COMMAND --help' for detailed command options.",
     version_flags=["--version", "-v"],
 )
 console = Console()
@@ -300,18 +301,23 @@ def new(
     pull: bool = False,
     print_path: bool = False,
 ):
-    """Create a new worktree in a tmux session.
+    """Create new worktree: new [name] [--branch BRANCH] [--pull]
+
+    Creates an isolated git worktree in a sibling directory and launches
+    a tmux session for working on a specific feature or task.
 
     Parameters
     ----------
+    query : str
+        Optional initial query/task description
     branch : str
-        Source branch to create worktree from
+        Source branch to create worktree from (default: current branch)
     name : str
-        Name suffix for the worktree branch
+        Name suffix for the worktree branch (default: timestamp)
     pull : bool
-        Pull latest changes before creating worktree
+        Pull latest changes before creating worktree (default: False)
     print_path : bool
-        Print worktree path to stdout
+        Print worktree path to stdout only (for scripting)
     """
     # Get repo root
     result = subprocess.run(
@@ -427,14 +433,17 @@ def clean(
     all: bool = False,
     scan_dir: str | None = None,
 ):
-    """Delete claude-wt worktrees and branches.
+    """Clean worktrees: clean [branch-name] [--all] [--scan-dir DIR]
+
+    Removes worktrees and optionally their branches. Interactive fzf picker
+    if no branch specified. Works with both regular and issue-based worktrees.
 
     Parameters
     ----------
     branch_name : str
         Specific branch to clean (optional - shows fzf if not provided)
     all : bool
-        Clean all claude-wt sessions
+        Clean all claude-wt sessions in current repository
     scan_dir : str
         Directory to scan for worktrees (default: ~/dev)
     """
@@ -674,7 +683,10 @@ def clean(
 
 @app.command(name="list")
 def list_worktrees(*, scan_dir: str | None = None):
-    """List all claude-wt worktrees from all repositories.
+    """List worktrees: list [--scan-dir DIR]
+
+    Scans for worktree directories and displays them in a table with
+    status, repository, session name, and full path.
 
     Parameters
     ----------
@@ -719,7 +731,10 @@ def list_worktrees(*, scan_dir: str | None = None):
 
 @app.command
 def switch(*, scan_dir: str | None = None):
-    """Quick switch between worktrees using fzf.
+    """Switch worktrees: switch [--scan-dir DIR]
+
+    Interactively select and switch to a worktree session in tmux.
+    Must be run from within a tmux session.
 
     Parameters
     ----------
@@ -770,7 +785,11 @@ def switch(*, scan_dir: str | None = None):
 
 @app.command
 def status():
-    """Show current worktree status and context."""
+    """Show status: status
+
+    Displays information about the current directory: whether you're in
+    a worktree, the branch name, and available commands.
+    """
     try:
         cwd = Path.cwd()
 
@@ -892,7 +911,12 @@ def status():
 
 @app.command
 def init():
-    """Initialize claude-wt for this repository."""
+    """Initialize repo: init
+
+    Adds .claude-wt/worktrees to .gitignore. NOTE: With external worktrees
+    in sibling directories, this is mostly optional but kept for backwards
+    compatibility.
+    """
     try:
         # Get repo root
         result = subprocess.run(
@@ -950,25 +974,25 @@ def linear_issue(
     interactive: bool = True,
     session_name: str | None = None,
 ):
-    """
-    Smart Linear issue handler for taskwarrior integration.
+    """Linear issue: linear-issue ISSUE-ID [--repo-path PATH] [--no-interactive] [--session-name NAME]
 
-    This command handles ALL the complex logic:
-    1. Checks for existing branches/worktrees
-    2. Prompts for selection or new branch name (if interactive)
-    3. Creates worktree in sibling directory
-    4. Returns worktree path for automation
+    Handles Linear issue worktrees with smart branch/worktree detection.
+    Primary command used by taskwarrior hooks for +wt tasks.
+
+    Workflow: (1) Checks for existing branches/worktrees, (2) Shows interactive
+    picker if enabled, (3) Creates worktree in sibling directory, (4) Optionally
+    launches tmux session with Claude.
 
     Parameters
     ----------
     issue_id : str
-        Linear issue ID (e.g., DOC-975)
+        Linear issue ID (e.g., DOC-975, ENG-123)
     repo_path : str
-        Repository path (defaults to current directory)
+        Repository path (default: current directory)
     interactive : bool
-        Enable interactive prompts (default True)
+        Enable interactive prompts with zenity (default: True)
     session_name : str
-        Optional tmux session name to create
+        Optional tmux session name to create and launch Claude
     """
     try:
         # Get repo root
@@ -1224,14 +1248,17 @@ def linear_issue(
 
 @app.command
 def from_pr(pr_number: str = "", query: str = ""):
-    """Create a worktree from a GitHub PR and launch Claude (interactive).
+    """GitHub PR (interactive): from-pr [PR-NUMBER] [query]
+
+    Fetches PR branch, creates worktree, and launches Claude with PR context.
+    Requires 'gh' CLI to be installed and authenticated.
 
     Parameters
     ----------
     pr_number : str
-        GitHub PR number (optional - will prompt if not provided)
+        GitHub PR number (optional - shows fzf picker if not provided)
     query : str
-        Optional query to send to Claude
+        Optional additional context/query to send to Claude
     """
     try:
         # Get repo root
@@ -1396,16 +1423,19 @@ def from_pr_noninteractive(
     repo_path: str = ".",
     session_name: str | None = None,
 ):
-    """Create a worktree from a GitHub PR number non-interactively.
+    """GitHub PR (non-interactive): from-pr-noninteractive PR-NUMBER [--repo-path PATH] [--session-name NAME]
+
+    Used by taskwarrior hooks for automated PR worktree creation.
+    Outputs worktree path to stdout for scripting.
 
     Parameters
     ----------
     pr_number : str
         GitHub PR number (e.g., 1234)
     repo_path : str
-        Repository path (defaults to current directory)
+        Repository path (default: current directory)
     session_name : str
-        Optional tmux session name to create
+        Optional tmux session name to create and launch Claude
     """
     try:
         # Get repo root
