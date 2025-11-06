@@ -10,6 +10,9 @@ from rich.console import Console
 from rich.panel import Panel
 
 from .core import create_worktree_context, get_worktree_base
+from .identifier import extract_pr_number
+from .repository import resolve_repo_path
+from .tmux_launcher import launch_claude_in_tmux
 
 console = Console()
 
@@ -233,17 +236,8 @@ def handle_pr_noninteractive(
         Optional tmux session name to create and launch Claude
     """
     try:
-        # Get repo root
-        if repo_path == ".":
-            result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            repo_root = Path(result.stdout.strip())
-        else:
-            repo_root = Path(repo_path).resolve()
+        # Use shared repository resolution
+        repo_root = resolve_repo_path(explicit_path=repo_path if repo_path != "." else None)
 
         # Get PR details using gh CLI
         pr_info = subprocess.run(
@@ -257,28 +251,6 @@ def handle_pr_noninteractive(
         pr_data = json.loads(pr_info.stdout)
         pr_branch = pr_data["headRefName"]
         pr_body = pr_data.get("body", "")
-
-        # Extract Linear issue ID from branch name or PR body
-        linear_issue_id = None
-
-        # Try branch name first (e.g., doc-975-feature, DOC-975-feature)
-        branch_match = re.search(r"(doc|DOC|DEV|dev|ENG|eng)-(\d+)", pr_branch)
-        if branch_match:
-            linear_issue_id = f"{branch_match.group(1).upper()}-{branch_match.group(2)}"
-
-        # Try PR body (e.g., "Fixes DOC-975" or Linear URL)
-        if not linear_issue_id and pr_body:
-            body_match = re.search(r"(DOC|DEV|ENG)-\d+", pr_body, re.IGNORECASE)
-            if body_match:
-                linear_issue_id = body_match.group(0).upper()
-
-        # Determine skill to activate based on repo name
-        repo_name = repo_root.name.lower()
-        skill_instruction = ""
-        if "vcluster-docs" in repo_name:
-            skill_instruction = "Activate the vcluster-docs-writer skill to get context-aware assistance."
-        elif "platform-docs" in repo_name:
-            skill_instruction = "Activate appropriate documentation skills."
 
         # Setup external worktree path in sibling directory
         worktree_base = get_worktree_base(repo_root)
@@ -377,78 +349,11 @@ def handle_pr_noninteractive(
         # Output the worktree path for the hook to use
         print(str(wt_path))
 
-        # If session_name provided, create tmux session and launch Claude
+        # If session_name provided, use shared tmux/Claude launcher
         if session_name:
-            # DEBUG: Log session creation
-            with open("/tmp/claude-wt-session-debug.log", "a") as f:
-                f.write("\n=== from_pr_noninteractive SESSION CREATION ===\n")
-                f.write(f"session_name parameter: '{session_name}'\n")
-                f.write(f"worktree_path: {wt_path}\n")
-                f.write(f"pr_number: {pr_number}\n")
-
-            # Check if session exists
-            check_session = subprocess.run(
-                ["tmux", "has-session", "-t", session_name], capture_output=True
-            )
-
-            if check_session.returncode != 0:
-                # DEBUG: Log actual creation
-                with open("/tmp/claude-wt-session-debug.log", "a") as f:
-                    f.write(f"Creating NEW tmux session: '{session_name}'\n")
-
-                # Create new tmux session
-                subprocess.run(
-                    [
-                        "tmux",
-                        "new-session",
-                        "-d",
-                        "-s",
-                        session_name,
-                        "-c",
-                        str(wt_path),
-                        "-n",
-                        "work",
-                    ]
-                )
-            else:
-                with open("/tmp/claude-wt-session-debug.log", "a") as f:
-                    f.write(f"Session '{session_name}' ALREADY EXISTS\n")
-
-            # Launch Claude with PR review command (ALWAYS - new or existing session)
-            # Build initial prompt with multiple commands
-            prompt_parts = []
-
-            # Add Linear issue command if found
-            if linear_issue_id:
-                prompt_parts.append(f"/ops-linear-issue {linear_issue_id}")
-
-            # Add skill activation instruction if applicable
-            if skill_instruction:
-                prompt_parts.append(skill_instruction)
-
-            # Add PR review command
-            prompt_parts.append(f"/ops-pr-review {pr_number}")
-
-            # Combine with double newlines
-            initial_prompt = "\n\n".join(prompt_parts)
-
-            # Launch Claude in the worktree with multi-command prompt
-            claude_cmd = f'claude --dangerously-skip-permissions --add-dir {wt_path} -- "{initial_prompt}"'
-            subprocess.run(
-                [
-                    "tmux",
-                    "send-keys",
-                    "-t",
-                    f"{session_name}:work",
-                    claude_cmd,
-                    "Enter",
-                ]
-            )
-
-            # Switch to session
-            subprocess.run(
-                ["tmux", "switch-client", "-t", session_name], capture_output=True
-            )
+            # PR handler only cares about PR review - nothing else
+            initial_prompt = f"/ops-pr-review {pr_number}"
+            launch_claude_in_tmux(session_name, wt_path, initial_prompt)
 
         # Successfully completed - worktree path already printed to stdout
         sys.exit(0)

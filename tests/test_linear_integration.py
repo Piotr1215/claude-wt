@@ -399,6 +399,66 @@ class TestLinearIssueHandling:
         ]
         assert len(tmux_calls) >= 3  # has-session, new-session, send-keys
 
+    def test_uses_slash_command_for_linear_issue(
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+    ):
+        """Test Claude is launched with /ops-linear-issue slash command.
+
+        BEHAVIOR: Linear issues should trigger /ops-linear-issue {id} command,
+        not plain text prompts. This enables Claude's Linear integration workflow.
+        """
+        # ARRANGE
+        mock_subprocess.side_effect = [
+            # git rev-parse --show-toplevel
+            Mock(stdout=str(mock_git_repo), returncode=0),
+            # git branch -a
+            Mock(stdout="", returncode=0),
+            # git fetch origin
+            Mock(returncode=0),
+            # git checkout main
+            Mock(returncode=0),
+            # git pull --ff-only
+            Mock(returncode=0),
+            # git show-ref --verify
+            Mock(returncode=1),
+            # git branch
+            Mock(returncode=0),
+            # git worktree add
+            Mock(returncode=0),
+            # tmux has-session (doesn't exist)
+            Mock(returncode=1),
+            # tmux new-session
+            Mock(returncode=0),
+            # tmux send-keys
+            Mock(returncode=0),
+            # tmux switch-client
+            Mock(returncode=0),
+        ]
+
+        # ACT
+        with pytest.raises(SystemExit) as exc_info:
+            handle_linear_issue("DOC-999", interactive=False, session_name="test-session")
+
+        # ASSERT
+        assert exc_info.value.code == 0
+
+        # Find the tmux send-keys call
+        send_keys_calls = [
+            call for call in mock_subprocess.call_args_list
+            if call[0] and len(call[0]) > 0 and "send-keys" in str(call[0][0])
+        ]
+        assert len(send_keys_calls) == 1, "Should have exactly one send-keys call"
+
+        # Extract the command arguments
+        send_keys_args = send_keys_calls[0][0][0]
+        claude_cmd = " ".join(send_keys_args)
+
+        # Verify slash command is used (not plain text)
+        assert "/ops-linear-issue DOC-999" in claude_cmd, \
+            f"Expected '/ops-linear-issue DOC-999' in command, got: {claude_cmd}"
+        assert "Working on issue" not in claude_cmd, \
+            "Should use slash command, not plain text description"
+
 
 class TestLinearIssueIDValidation:
     """Property-based tests for issue ID validation."""

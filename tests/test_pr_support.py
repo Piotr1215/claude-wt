@@ -255,6 +255,85 @@ class TestFromPRNoninteractive:
             "worktree" in str(call).lower() for call in mock_print.call_args_list
         )
 
+    @patch("claude_wt.github.launch_claude_in_tmux")
+    @patch("claude_wt.github.create_worktree_context")
+    @patch("claude_wt.github.get_worktree_base")
+    @patch("claude_wt.github.resolve_repo_path")
+    @patch("claude_wt.github.subprocess.run")
+    @patch("builtins.print")
+    def test_pr_uses_only_pr_review_slash_command(
+        self, mock_print, mock_run, mock_resolve, mock_worktree_base,
+        mock_context, mock_launch_claude
+    ):
+        """Test PR handler ONLY uses /ops-pr-review, no Linear ID or skill activation.
+
+        BEHAVIOR: PR handler should focus ONLY on PR review.
+        No automatic Linear ID extraction, no skill activation, no magic.
+        Just: /ops-pr-review {pr_number}
+        """
+        # Setup
+        from claude_wt.github import handle_pr_noninteractive
+
+        mock_repo = Mock(spec=Path)
+        mock_repo.name = "repo"
+        mock_resolve.return_value = mock_repo
+
+        mock_wt_base = Mock(spec=Path)
+        mock_wt_base.mkdir = Mock()
+        mock_wt_base.__truediv__ = Mock(return_value=Mock(spec=Path, exists=Mock(return_value=False)))
+        mock_worktree_base.return_value = mock_wt_base
+
+        # Mock gh pr view - branch has Linear ID in it (DOC-429)
+        pr_json = json.dumps({
+            "headRefName": "doc-429-install-agent",
+            "title": "Add installation agent",
+            "number": 1340,
+            "body": "Fixes DOC-429"
+        })
+
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view
+            Mock(returncode=0, stdout="", stderr=""),  # git fetch
+            Mock(returncode=1, stdout="", stderr=""),  # git show-ref (doesn't exist)
+            Mock(returncode=0, stdout="", stderr=""),  # git branch
+            Mock(returncode=0, stdout="", stderr=""),  # git worktree add
+        ]
+
+        # Act
+        with pytest.raises(SystemExit) as exc_info:
+            handle_pr_noninteractive(
+                pr_number="1340",
+                repo_path="/home/user/repo",
+                session_name="test-session"
+            )
+
+        # Assert
+        assert exc_info.value.code == 0
+
+        # Verify launch_claude_in_tmux was called with ONLY /ops-pr-review
+        assert mock_launch_claude.called, "Should launch Claude"
+        call_args = mock_launch_claude.call_args
+
+        session_name = call_args[0][0]
+        worktree_path = call_args[0][1]
+        initial_prompt = call_args[0][2]
+
+        # The prompt should be ONLY /ops-pr-review, nothing else
+        assert initial_prompt == "/ops-pr-review 1340", \
+            f"Expected only '/ops-pr-review 1340', got: {initial_prompt}"
+
+        # Should NOT contain Linear ID (even though branch has DOC-429)
+        assert "DOC-429" not in initial_prompt, \
+            "Should not extract Linear ID from branch"
+        assert "/ops-linear-issue" not in initial_prompt, \
+            "Should not add Linear issue command"
+
+        # Should NOT contain skill activation
+        assert "skill" not in initial_prompt.lower(), \
+            "Should not add skill activation instructions"
+        assert "vcluster-docs-writer" not in initial_prompt, \
+            "Should not hardcode skill names"
+
     @patch("claude_wt.cli.Path.write_text")
     @patch("claude_wt.cli.Path.mkdir")
     @patch("claude_wt.cli.subprocess.run")
