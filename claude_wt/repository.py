@@ -17,6 +17,7 @@ from pathlib import Path
 
 class RepositoryResolutionError(Exception):
     """Raised when repository path cannot be determined."""
+
     pass
 
 

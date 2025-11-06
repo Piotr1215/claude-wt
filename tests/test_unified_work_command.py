@@ -7,7 +7,6 @@ Following TDD methodology:
 4. Keep cyclomatic complexity low (< 5 per function)
 """
 
-import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -182,7 +181,7 @@ class TestRepositoryResolution:
 
         BEHAVIOR: Should raise error with helpful message.
         """
-        from claude_wt.repository import resolve_repo_path, RepositoryResolutionError
+        from claude_wt.repository import RepositoryResolutionError, resolve_repo_path
 
         uda = {"repo": "unknown-repo"}
 
@@ -200,10 +199,7 @@ class TestRepositoryResolution:
         """
         from claude_wt.repository import resolve_repo_path
 
-        mock_run.return_value = Mock(
-            stdout="/home/user/current-repo",
-            returncode=0
-        )
+        mock_run.return_value = Mock(stdout="/home/user/current-repo", returncode=0)
 
         result = resolve_repo_path(explicit_path=None, task_uda=None)
 
@@ -218,7 +214,7 @@ class TestRepositoryResolution:
 
         BEHAVIOR: Should raise error with helpful message.
         """
-        from claude_wt.repository import resolve_repo_path, RepositoryResolutionError
+        from claude_wt.repository import RepositoryResolutionError, resolve_repo_path
 
         mock_run.side_effect = Exception("not a git repository")
 
@@ -306,7 +302,7 @@ class TestTmuxClaudeLauncher:
         launch_claude_in_tmux(
             session_name="test-session",
             worktree_path=Path("/tmp/worktree"),
-            initial_prompt="Test prompt"
+            initial_prompt="Test prompt",
         )
 
         assert mock_run.call_count == 4
@@ -335,7 +331,7 @@ class TestTmuxClaudeLauncher:
         launch_claude_in_tmux(
             session_name="existing-session",
             worktree_path=Path("/tmp/worktree"),
-            initial_prompt="Test prompt"
+            initial_prompt="Test prompt",
         )
 
         assert mock_run.call_count == 3
@@ -357,9 +353,7 @@ class TestTmuxClaudeLauncher:
         prompt = "Work on feature X"
 
         launch_claude_in_tmux(
-            session_name="test-session",
-            worktree_path=worktree,
-            initial_prompt=prompt
+            session_name="test-session", worktree_path=worktree, initial_prompt=prompt
         )
 
         # Find the send-keys call
@@ -391,40 +385,48 @@ class TestCyclomaticComplexity:
 
         BEHAVIOR: Simple regex matching, no branching.
         """
-        from claude_wt.identifier import (
-            is_linear_issue,
-            is_pr_number,
-            extract_pr_number,
-            normalize_linear_id
-        )
-
         # Each should be a simple one-liner with regex
         # CC=1 means: single entry, single exit, no branches
         import inspect
 
-        for func in [is_linear_issue, is_pr_number, extract_pr_number, normalize_linear_id]:
+        from claude_wt.identifier import (
+            extract_pr_number,
+            is_linear_issue,
+            is_pr_number,
+            normalize_linear_id,
+        )
+
+        for func in [
+            is_linear_issue,
+            is_pr_number,
+            extract_pr_number,
+            normalize_linear_id,
+        ]:
             source = inspect.getsource(func)
             # Count decision points (if, for, while, and, or, except)
             decisions = (
-                source.count("if ") +
-                source.count("elif ") +
-                source.count("for ") +
-                source.count("while ") +
-                source.count(" and ") +
-                source.count(" or ") +
-                source.count("except ")
+                source.count("if ")
+                + source.count("elif ")
+                + source.count("for ")
+                + source.count("while ")
+                + source.count(" and ")
+                + source.count(" or ")
+                + source.count("except ")
             )
             # CC = decisions + 1, should be <= 4 (allowing one guard clause)
-            assert decisions <= 3, f"{func.__name__} has too many decision points: {decisions}"
+            assert decisions <= 3, (
+                f"{func.__name__} has too many decision points: {decisions}"
+            )
 
     def test_repository_resolution_has_low_complexity(self):
         """Repository resolution should use strategy pattern, not nested ifs.
 
         BEHAVIOR: Each resolution method is separate, main function just chains.
         """
+        import inspect
+
         from claude_wt.repository import resolve_repo_path
 
-        import inspect
         source = inspect.getsource(resolve_repo_path)
 
         # Should have minimal branching - just precedence checks

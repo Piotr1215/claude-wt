@@ -262,8 +262,13 @@ class TestFromPRNoninteractive:
     @patch("claude_wt.github.subprocess.run")
     @patch("builtins.print")
     def test_pr_uses_only_pr_review_slash_command(
-        self, mock_print, mock_run, mock_resolve, mock_worktree_base,
-        mock_context, mock_launch_claude
+        self,
+        mock_print,
+        mock_run,
+        mock_resolve,
+        mock_worktree_base,
+        mock_context,
+        mock_launch_claude,
     ):
         """Test PR handler ONLY uses /ops-pr-review, no Linear ID or skill activation.
 
@@ -280,16 +285,20 @@ class TestFromPRNoninteractive:
 
         mock_wt_base = Mock(spec=Path)
         mock_wt_base.mkdir = Mock()
-        mock_wt_base.__truediv__ = Mock(return_value=Mock(spec=Path, exists=Mock(return_value=False)))
+        mock_wt_base.__truediv__ = Mock(
+            return_value=Mock(spec=Path, exists=Mock(return_value=False))
+        )
         mock_worktree_base.return_value = mock_wt_base
 
         # Mock gh pr view - branch has Linear ID in it (DOC-429)
-        pr_json = json.dumps({
-            "headRefName": "doc-429-install-agent",
-            "title": "Add installation agent",
-            "number": 1340,
-            "body": "Fixes DOC-429"
-        })
+        pr_json = json.dumps(
+            {
+                "headRefName": "doc-429-install-agent",
+                "title": "Add installation agent",
+                "number": 1340,
+                "body": "Fixes DOC-429",
+            }
+        )
 
         mock_run.side_effect = [
             Mock(returncode=0, stdout=pr_json, stderr=""),  # gh pr view
@@ -304,7 +313,7 @@ class TestFromPRNoninteractive:
             handle_pr_noninteractive(
                 pr_number="1340",
                 repo_path="/home/user/repo",
-                session_name="test-session"
+                session_name="test-session",
             )
 
         # Assert
@@ -314,25 +323,28 @@ class TestFromPRNoninteractive:
         assert mock_launch_claude.called, "Should launch Claude"
         call_args = mock_launch_claude.call_args
 
-        session_name = call_args[0][0]
-        worktree_path = call_args[0][1]
         initial_prompt = call_args[0][2]
 
         # The prompt should be ONLY /ops-pr-review, nothing else
-        assert initial_prompt == "/ops-pr-review 1340", \
+        assert initial_prompt == "/ops-pr-review 1340", (
             f"Expected only '/ops-pr-review 1340', got: {initial_prompt}"
+        )
 
         # Should NOT contain Linear ID (even though branch has DOC-429)
-        assert "DOC-429" not in initial_prompt, \
+        assert "DOC-429" not in initial_prompt, (
             "Should not extract Linear ID from branch"
-        assert "/ops-linear-issue" not in initial_prompt, \
+        )
+        assert "/ops-linear-issue" not in initial_prompt, (
             "Should not add Linear issue command"
+        )
 
         # Should NOT contain skill activation
-        assert "skill" not in initial_prompt.lower(), \
+        assert "skill" not in initial_prompt.lower(), (
             "Should not add skill activation instructions"
-        assert "vcluster-docs-writer" not in initial_prompt, \
+        )
+        assert "vcluster-docs-writer" not in initial_prompt, (
             "Should not hardcode skill names"
+        )
 
     @patch("claude_wt.cli.Path.write_text")
     @patch("claude_wt.cli.Path.mkdir")

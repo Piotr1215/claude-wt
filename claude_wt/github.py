@@ -1,7 +1,6 @@
 """GitHub PR integration for claude-wt."""
 
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +9,6 @@ from rich.console import Console
 from rich.panel import Panel
 
 from .core import create_worktree_context, get_worktree_base
-from .identifier import extract_pr_number
 from .repository import resolve_repo_path
 from .tmux_launcher import launch_claude_in_tmux
 
@@ -237,7 +235,9 @@ def handle_pr_noninteractive(
     """
     try:
         # Use shared repository resolution
-        repo_root = resolve_repo_path(explicit_path=repo_path if repo_path != "." else None)
+        repo_root = resolve_repo_path(
+            explicit_path=repo_path if repo_path != "." else None
+        )
 
         # Get PR details using gh CLI
         pr_info = subprocess.run(
@@ -250,7 +250,6 @@ def handle_pr_noninteractive(
 
         pr_data = json.loads(pr_info.stdout)
         pr_branch = pr_data["headRefName"]
-        pr_body = pr_data.get("body", "")
 
         # Setup external worktree path in sibling directory
         worktree_base = get_worktree_base(repo_root)

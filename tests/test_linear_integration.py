@@ -9,8 +9,7 @@ Following FIRST principles:
 """
 
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -122,10 +121,18 @@ class TestLinearIssueHandling:
         branch_create_call = mock_subprocess.call_args_list[6]
         branch_cmd = " ".join(branch_create_call[0][0])
         # Slash in issue ID should be converted to dash
-        assert "doc-975-malicious" in branch_cmd or "doc-975/doc-975-malicious" in branch_cmd
+        assert (
+            "doc-975-malicious" in branch_cmd
+            or "doc-975/doc-975-malicious" in branch_cmd
+        )
 
     def test_non_interactive_creates_timestamped_branch(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo, capsys
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_git_repo,
+        capsys,
     ):
         """Test non-interactive mode creates branch with timestamp.
 
@@ -168,7 +175,12 @@ class TestLinearIssueHandling:
         assert any(f"20{y}" in branch_cmd for y in range(20, 30))
 
     def test_uses_existing_branch_without_recreation(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo, capsys
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_git_repo,
+        capsys,
     ):
         """Test that existing branches are reused, not recreated.
 
@@ -202,7 +214,11 @@ class TestLinearIssueHandling:
         assert exc_info.value.code == 0
         # Verify git branch command was NOT called (branch exists)
         git_commands = [call[0][0] for call in mock_subprocess.call_args_list]
-        branch_commands = [cmd for cmd in git_commands if "branch" in cmd and "show-ref" not in " ".join(cmd)]
+        branch_commands = [
+            cmd
+            for cmd in git_commands
+            if "branch" in cmd and "show-ref" not in " ".join(cmd)
+        ]
         # Should only see 'git branch -a' for listing, not 'git branch <name>' for creation
         assert len(branch_commands) == 1
         assert "-a" in branch_commands[0]
@@ -271,7 +287,12 @@ class TestLinearIssueHandling:
         assert exc_info.value.code == 1
 
     def test_prints_worktree_path_to_stdout(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo, capsys
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_git_repo,
+        capsys,
     ):
         """Test that worktree path is output for automation.
 
@@ -345,10 +366,16 @@ class TestLinearIssueHandling:
         assert exc_info.value.code == 0
         # Verify zenity was never called
         zenity_calls = [
-            call for call in mock_subprocess.call_args_list
-            if call[0] and isinstance(call[0][0], list) and len(call[0][0]) > 0 and "zenity" == call[0][0][0]
+            call
+            for call in mock_subprocess.call_args_list
+            if call[0]
+            and isinstance(call[0][0], list)
+            and len(call[0][0]) > 0
+            and "zenity" == call[0][0][0]
         ]
-        assert len(zenity_calls) == 0, f"zenity should not be called in non-interactive mode, but got: {zenity_calls}"
+        assert len(zenity_calls) == 0, (
+            f"zenity should not be called in non-interactive mode, but got: {zenity_calls}"
+        )
 
     def test_creates_tmux_session_when_requested(
         self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
@@ -388,13 +415,16 @@ class TestLinearIssueHandling:
 
         # ACT
         with pytest.raises(SystemExit) as exc_info:
-            handle_linear_issue("DOC-555", interactive=False, session_name="test-session")
+            handle_linear_issue(
+                "DOC-555", interactive=False, session_name="test-session"
+            )
 
         # ASSERT
         assert exc_info.value.code == 0
         # Verify tmux commands were called
         tmux_calls = [
-            call for call in mock_subprocess.call_args_list
+            call
+            for call in mock_subprocess.call_args_list
             if call[0] and "tmux" in str(call[0][0])
         ]
         assert len(tmux_calls) >= 3  # has-session, new-session, send-keys
@@ -437,14 +467,17 @@ class TestLinearIssueHandling:
 
         # ACT
         with pytest.raises(SystemExit) as exc_info:
-            handle_linear_issue("DOC-999", interactive=False, session_name="test-session")
+            handle_linear_issue(
+                "DOC-999", interactive=False, session_name="test-session"
+            )
 
         # ASSERT
         assert exc_info.value.code == 0
 
         # Find the tmux send-keys call
         send_keys_calls = [
-            call for call in mock_subprocess.call_args_list
+            call
+            for call in mock_subprocess.call_args_list
             if call[0] and len(call[0]) > 0 and "send-keys" in str(call[0][0])
         ]
         assert len(send_keys_calls) == 1, "Should have exactly one send-keys call"
@@ -454,10 +487,12 @@ class TestLinearIssueHandling:
         claude_cmd = " ".join(send_keys_args)
 
         # Verify slash command is used (not plain text)
-        assert "/ops-linear-issue DOC-999" in claude_cmd, \
+        assert "/ops-linear-issue DOC-999" in claude_cmd, (
             f"Expected '/ops-linear-issue DOC-999' in command, got: {claude_cmd}"
-        assert "Working on issue" not in claude_cmd, \
+        )
+        assert "Working on issue" not in claude_cmd, (
             "Should use slash command, not plain text description"
+        )
 
 
 class TestLinearIssueIDValidation:

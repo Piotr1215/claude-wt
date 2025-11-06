@@ -35,8 +35,7 @@ def _check_session_exists(session_name: str) -> bool:
     Cyclomatic Complexity: 1 (no branching)
     """
     result = subprocess.run(
-        ["tmux", "has-session", "-t", session_name],
-        capture_output=True
+        ["tmux", "has-session", "-t", session_name], capture_output=True
     )
     return result.returncode == 0
 
@@ -46,35 +45,36 @@ def _create_tmux_session(session_name: str, worktree_path: Path) -> None:
 
     Cyclomatic Complexity: 1 (no branching)
     """
-    subprocess.run([
-        "tmux", "new-session",
-        "-d",
-        "-s", session_name,
-        "-c", str(worktree_path),
-        "-n", "work"
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            session_name,
+            "-c",
+            str(worktree_path),
+            "-n",
+            "work",
+        ]
+    )
 
 
 def _send_claude_command(
-    session_name: str,
-    worktree_path: Path,
-    initial_prompt: str
+    session_name: str, worktree_path: Path, initial_prompt: str
 ) -> None:
     """Send Claude command to tmux session.
 
     Cyclomatic Complexity: 1 (no branching)
     """
     claude_cmd = (
-        f'claude --dangerously-skip-permissions '
+        f"claude --dangerously-skip-permissions "
         f'--add-dir {worktree_path} -- "{initial_prompt}"'
     )
 
-    subprocess.run([
-        "tmux", "send-keys",
-        "-t", f"{session_name}:work",
-        claude_cmd,
-        "Enter"
-    ])
+    subprocess.run(
+        ["tmux", "send-keys", "-t", f"{session_name}:work", claude_cmd, "Enter"]
+    )
 
 
 def _switch_to_session(session_name: str) -> None:
@@ -82,7 +82,4 @@ def _switch_to_session(session_name: str) -> None:
 
     Cyclomatic Complexity: 1 (no branching)
     """
-    subprocess.run(
-        ["tmux", "switch-client", "-t", session_name],
-        capture_output=True
-    )
+    subprocess.run(["tmux", "switch-client", "-t", session_name], capture_output=True)

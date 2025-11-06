@@ -5,7 +5,6 @@ Tests focus on behavior verification, not implementation details.
 """
 
 import subprocess
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -350,7 +349,9 @@ class TestStatusCommand:
             # git branch --show-current
             Mock(returncode=0, stdout="main\n"),
             # git worktree list --porcelain
-            Mock(returncode=0, stdout=f"worktree {repo_root}\nbranch refs/heads/main\n"),
+            Mock(
+                returncode=0, stdout=f"worktree {repo_root}\nbranch refs/heads/main\n"
+            ),
         ]
 
         with patch("claude_wt.cli.Path.cwd", return_value=repo_root):
@@ -369,7 +370,9 @@ class TestStatusCommand:
         BEHAVIOR: Should catch and display errors gracefully.
         """
         # ARRANGE
-        mock_subprocess.side_effect = subprocess.CalledProcessError(1, ["git", "status"])
+        mock_subprocess.side_effect = subprocess.CalledProcessError(
+            1, ["git", "status"]
+        )
 
         # ACT & ASSERT
         with pytest.raises(SystemExit) as exc_info:
@@ -405,7 +408,6 @@ class TestInitCommand:
         # ARRANGE
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
-        gitignore = repo_root / ".gitignore"
 
         mock_subprocess.return_value = Mock(stdout=str(repo_root))
         mock_check_gitignore.return_value = False

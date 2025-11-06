@@ -3,7 +3,6 @@
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
 
 from .core import create_worktree_context, get_worktree_base
 from .identifier import normalize_linear_id
@@ -38,7 +37,9 @@ def handle_linear_issue(
     """
     try:
         # Use shared repository resolution (explicit path or current directory)
-        repo_root = resolve_repo_path(explicit_path=repo_path if repo_path != "." else None)
+        repo_root = resolve_repo_path(
+            explicit_path=repo_path if repo_path != "." else None
+        )
 
         # External worktrees go to sibling directory
         worktree_base = get_worktree_base(repo_root)
