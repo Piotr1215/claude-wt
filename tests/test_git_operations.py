@@ -3,8 +3,6 @@
 import os
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -240,45 +238,6 @@ branch main
                     with pytest.raises(SystemExit) as exc_info:
                         new(query="test", name="fail")
                     assert exc_info.value.code == 1
-
-    def test_init_adds_to_gitignore(self):
-        """Test that init command adds .claude-wt/worktrees to .gitignore."""
-        from claude_wt.cli import init
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repo_root = Path(tmpdir)
-
-            # Create an existing .gitignore
-            gitignore = repo_root / ".gitignore"
-            gitignore.write_text("*.pyc\n")
-
-            with patch("claude_wt.cli.subprocess.run") as mock_run:
-                # Mock git rev-parse to return our temp dir
-                mock_run.return_value = Mock(
-                    stdout=str(repo_root), returncode=0, stderr=""
-                )
-
-                with patch("claude_wt.cli.check_gitignore", return_value=False):
-                    init()
-
-                    # Check that .claude-wt/worktrees was added
-                    content = gitignore.read_text()
-                    assert ".claude-wt/worktrees" in content
-                    assert "# Claude worktree management" in content
-
-    @patch("claude_wt.cli.subprocess.run")
-    def test_init_skips_if_already_ignored(self, mock_run):
-        """Test that init skips if pattern already in gitignore."""
-        from claude_wt.cli import init
-
-        mock_run.return_value = Mock(stdout="/home/user/repo", returncode=0)
-
-        with patch("claude_wt.cli.check_gitignore", return_value=True):
-            # Should not raise an error, just print success message
-            init()
-
-        # No file operations should have occurred
-        assert mock_run.call_count == 1  # Only git rev-parse
 
     @patch("claude_wt.cli.subprocess.run")
     def test_clean_identifies_external_worktrees(self, mock_run):

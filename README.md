@@ -81,10 +81,6 @@ claude-wt clean session-name            # Specific session
 claude-wt clean --all                   # All sessions
 ```
 
-**`status`** - Show current worktree context
-
-**`init`** - Add worktrees to .gitignore
-
 ### Integrations
 
 **`linear-issue ISSUE-ID`** - Create worktree from Linear issue (for taskwarrior hooks)
