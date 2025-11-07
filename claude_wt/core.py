@@ -120,10 +120,10 @@ def install_branch_protection_hook(wt_path: Path, branch_name: str):
         hooks_dir.mkdir(parents=True, exist_ok=True)
         hook_path = hooks_dir / "post-checkout"
 
-        # Create hook that detects and prevents branch switches
+        # Create hook that warns about branch switches
         hook_content = f"""#!/usr/bin/env bash
-# Claude-wt worktree protection hook
-# This worktree is locked to branch: {branch_name}
+# Claude-wt worktree warning hook
+# This worktree was created for branch: {branch_name}
 
 prev_head="$1"
 new_head="$2"
@@ -135,27 +135,16 @@ if [ "$branch_checkout" = "1" ]; then
 
     if [ "$current_branch" != "{branch_name}" ]; then
         echo ""
-        echo "🚨🚨🚨 WORKTREE BRANCH SWITCH DETECTED! 🚨🚨🚨"
+        echo "⚠️  WARNING: You switched branches in a worktree!"
         echo ""
-        echo "ERROR: You tried to switch away from branch '{branch_name}'"
-        echo "Current branch is now: $current_branch"
+        echo "Original branch: {branch_name}"
+        echo "Current branch:  $current_branch"
         echo ""
-        echo "⚠️  This worktree is LOCKED to branch: {branch_name}"
-        echo "⚠️  Switching branches in a worktree causes file corruption and lost work!"
+        echo "This worktree was created for '{branch_name}'"
+        echo "To work on different branches, use separate worktrees:"
+        echo "  • claude-wt switch"
+        echo "  • claude-wt list"
         echo ""
-        echo "What you should do instead:"
-        echo "  1. Switch back: git checkout {branch_name}"
-        echo "  2. To work on '$current_branch': cd to main repo or different worktree"
-        echo "  3. Use: claude-wt switch (to switch between worktrees)"
-        echo "  4. Use: claude-wt list (to see all worktrees)"
-        echo ""
-        echo "Switching back to {branch_name} now..."
-        echo ""
-
-        # Automatically switch back to the correct branch
-        git checkout {branch_name} 2>/dev/null
-
-        exit 1
     fi
 fi
 

@@ -1,0 +1,33 @@
+# Starship configuration for claude-wt worktree indicator
+# Add this to your ~/.config/starship.toml
+
+# Custom worktree indicator
+[custom.claude_wt]
+command = """
+if [ -f .git ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [[ "$PWD" == *"-worktrees/"* ]]; then
+        basename "$PWD"
+    else
+        git rev-parse --abbrev-ref HEAD
+    fi
+fi
+"""
+when = '[ -f .git ]'
+format = '🌳[$output]($style) '
+style = 'bold yellow'
+description = 'Shows when in a git worktree'
+
+# You can also add a warning if on wrong branch
+[custom.claude_wt_warning]
+command = """
+if [ -f .git ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Read the expected branch from CLAUDE.md if it exists
+    if [ -f CLAUDE.md ]; then
+        current=$(git rev-parse --abbrev-ref HEAD)
+        echo "⚠️[$current]"
+    fi
+fi
+"""
+when = '[ -f .git ] && [ -f CLAUDE.md ]'
+format = '[$output](bold red) '
+description = 'Warning when in worktree'

@@ -89,7 +89,9 @@ claude-wt clean --all                   # All sessions
 
 **`from-pr-noninteractive PR-NUMBER`** - Non-interactive PR worktree (for automation)
 
-## Shell Completion
+## Shell Integration
+
+### Tab Completion
 
 ```bash
 # Install zsh completion
@@ -110,6 +112,28 @@ claude-wt new --<TAB>        # Shows flags
 claude-wt clean --<TAB>      # Shows options
 ```
 
+### Prompt Indicator (Optional)
+
+Add a visual indicator to know when you're in a worktree:
+
+**Starship** (recommended) - add to `~/.config/starship.toml`:
+```toml
+[custom.claude_wt]
+when = '[ -f .git ]'
+command = '''
+if [[ "$PWD" == *"-worktrees/"* ]]; then basename "$PWD"; fi
+'''
+format = '🌳[$output](bold yellow) '
+```
+
+**Bash/Zsh** - add to `~/.bashrc` or `~/.zshrc`:
+```bash
+source /path/to/claude-wt/shell/worktree-prompt.sh
+PS1='$(claude_wt_prompt)'$PS1
+```
+
+Shows `🌳[worktree-name]` when in a worktree.
+
 ## How It Works
 
 Creates git worktrees in a sibling directory `{repo-name}-worktrees/`. Each worktree gets its own branch, runs in a dedicated tmux session, and automatically launches Claude Code.
@@ -117,6 +141,7 @@ Creates git worktrees in a sibling directory `{repo-name}-worktrees/`. Each work
 Benefits:
 - **Auto-launches Claude** - No manual setup needed
 - **Parallel sessions** - Work on multiple features simultaneously
+- **Branch protection** - Hooks prevent accidental branch switching
 - No git pull delays - sessions start instantly
 - No conflicts - each session is isolated
 - Clean history - main branch stays pristine
