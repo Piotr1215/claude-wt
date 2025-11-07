@@ -50,8 +50,8 @@ class TestPathOperations:
         assert claude_md.exists()
 
         content = claude_md.read_text()
-        assert "Git worktree" in content
-        assert "NOT the main repository" in content
+        assert "WORKTREE" in content  # Updated format uses capitals
+        assert "NEVER switch branches" in content  # New safety warning
         assert str(wt_path) in content
         assert str(repo_root) in content
         assert issue_id in content
@@ -151,7 +151,7 @@ class TestPathOperations:
             assert worktree_base.name == f"{repo_path.name}-worktrees"
 
     def test_create_worktree_context_includes_commands(self, tmp_path):
-        """Test that CLAUDE.md includes helpful git commands."""
+        """Test that CLAUDE.md includes helpful git commands and warnings."""
         wt_path = tmp_path / "worktree"
         wt_path.mkdir()
         branch_name = "feature/new-stuff"
@@ -162,4 +162,7 @@ class TestPathOperations:
         assert "git add" in content
         assert "git commit" in content
         assert f"git push origin {branch_name}" in content
-        assert "pwd" in content  # Command to check current location
+        # Check for new safety warnings
+        assert "NEVER switch branches" in content
+        assert "git checkout main  # THIS BREAKS EVERYTHING!" in content
+        assert "claude-wt switch" in content

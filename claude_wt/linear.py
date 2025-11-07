@@ -4,7 +4,11 @@ import subprocess
 import sys
 from datetime import datetime
 
-from .core import create_worktree_context, get_worktree_base
+from .core import (
+    create_worktree_context,
+    get_worktree_base,
+    install_branch_protection_hook,
+)
 from .identifier import normalize_linear_id
 from .repository import resolve_repo_path
 from .tmux_launcher import launch_claude_in_tmux
@@ -220,6 +224,9 @@ def handle_linear_issue(
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(worktree_path, issue_id, branch_name, repo_root)
+
+        # Install branch protection hook
+        install_branch_protection_hook(worktree_path, branch_name)
 
         # Output path for automation (to stdout)
         print(str(worktree_path))

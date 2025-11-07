@@ -8,7 +8,11 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from .core import create_worktree_context, get_worktree_base
+from .core import (
+    create_worktree_context,
+    get_worktree_base,
+    install_branch_protection_hook,
+)
 from .repository import resolve_repo_path
 from .tmux_launcher import launch_claude_in_tmux
 
@@ -168,6 +172,9 @@ def handle_pr_interactive(pr_number: str = "", query: str = ""):
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(wt_path, f"PR #{pr_number}", pr_branch, repo_root)
+
+        # Install branch protection hook
+        install_branch_protection_hook(wt_path, pr_branch)
 
         # Print helpful info
         panel_content = f"""[dim]PR:[/dim] [cyan]#{pr_number}[/cyan] - {pr_title}
@@ -344,6 +351,9 @@ def handle_pr_noninteractive(
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(wt_path, f"PR #{pr_number}", pr_branch, repo_root)
+
+        # Install branch protection hook
+        install_branch_protection_hook(wt_path, pr_branch)
 
         # Output the worktree path for the hook to use
         print(str(wt_path))

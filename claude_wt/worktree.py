@@ -7,7 +7,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from .core import create_worktree_context, get_worktree_base, is_claude_wt_worktree
+from .core import (
+    create_worktree_context,
+    get_worktree_base,
+    install_branch_protection_hook,
+    is_claude_wt_worktree,
+)
 from .tmux import create_tmux_session
 
 console = Console()
@@ -31,13 +36,19 @@ def list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
             continue
 
         for wt_path in list(wt_base.iterdir()):
-            if wt_path.is_dir() and wt_path.name.startswith("claude-wt-"):
+            # Check if it's actually a git worktree (has .git file pointing to main repo)
+            if wt_path.is_dir() and (wt_path / ".git").exists():
                 repo_name = wt_base.name.replace("-worktrees", "")
+                # Extract session name - remove claude-wt- prefix if present
+                session_name = wt_path.name
+                if session_name.startswith("claude-wt-"):
+                    session_name = session_name.replace("claude-wt-", "", 1)
+
                 all_worktrees.append(
                     {
                         "path": str(wt_path),
                         "repo": repo_name,
-                        "session": wt_path.name.replace("claude-wt-", "", 1),
+                        "session": session_name,
                     }
                 )
 
@@ -197,6 +208,9 @@ def create_new_worktree(
 
     # Create worktree context file
     create_worktree_context(wt_path, f"claude-wt-{suffix}", branch_name, repo_root)
+
+    # Install branch protection hook
+    install_branch_protection_hook(wt_path, branch_name)
 
     # If print_path is set, just output the path for shell integration
     if print_path:

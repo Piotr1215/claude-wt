@@ -42,43 +42,132 @@ def create_worktree_context(
 
     content = f"""# Worktree Context
 
-**CRITICAL: You are working in a Git worktree, NOT the main repository!**
+🚨 **CRITICAL: You are in a Git WORKTREE - NEVER switch branches here!** 🚨
+
+## ⚠️ IMPORTANT RULES ⚠️
+
+### ❌ NEVER DO THIS:
+- **NEVER switch branches** in this worktree (with git checkout, git switch, or lazygit)
+- **NEVER run git checkout/switch** - this will corrupt your work!
+- **This worktree is LOCKED to branch `{branch_name}`**
+
+### ✅ INSTEAD DO THIS:
+- To work on a different branch: **`cd` to a different worktree** or back to main repo
+- To switch context: Use `claude-wt switch` or `cd {repo_root}`
+- To see all worktrees: Run `claude-wt list`
 
 ## Location Information
-- **Current Worktree Path**: `{wt_path}`
+- **Current Worktree**: `{wt_path}`
 - **Main Repository**: `{repo_root}`
-- **Issue**: {issue_id}
-- **Branch**: `{branch_name}`
+- **Locked Branch**: `{branch_name}`
+- **Issue/Session**: {issue_id}
 
-## Important Notes
-- This is an ISOLATED worktree for issue {issue_id}
-- All changes are on branch `{branch_name}`
-- You are NOT in the main repository
-- Run ALL commands from THIS worktree directory
+## Why Worktrees?
+Each worktree is permanently locked to ONE branch. This allows multiple parallel work sessions
+without conflicts. Think of it as a separate checkout, not as a place to switch branches.
 
-## Common Commands
+## Workflow
 ```bash
-# Check your current location
-pwd  # Should show: {wt_path}
-
-# Commit changes
+# ✅ Work on current branch
 git add .
-git commit -m "your message"
-
-# Push to remote
+git commit -m "fix: implement feature"
 git push origin {branch_name}
 
-# See main repo (DO NOT edit there!)
-ls {repo_root}
+# ✅ Switch to different worktree
+cd {repo_root}  # Go back to main
+claude-wt switch  # Pick different worktree
+
+# ❌ NEVER do this in a worktree
+git checkout main  # THIS BREAKS EVERYTHING!
+git switch other-branch  # DON'T DO THIS!
 ```
 
 ## Remember
-You are working in the worktree at:
-{wt_path}
+**This worktree = One branch only**
+Path: {wt_path}
+Branch: {branch_name}
 
-This is completely separate from the main repo. All your work here is isolated to the {branch_name} branch.
+To work on something else, use a different worktree or go back to main repo.
 """
     claude_md.write_text(content)
+
+
+def install_branch_protection_hook(wt_path: Path, branch_name: str):
+    """Install a post-checkout hook that prevents branch switching in worktrees."""
+    try:
+        # In worktrees, .git is a file that points to the actual git directory
+        git_path = wt_path / ".git"
+
+        if not git_path.exists():
+            return  # No .git file/dir, skip hook installation (likely in tests)
+
+        if git_path.is_file():
+            # Read the gitdir path from the .git file
+            git_content = git_path.read_text().strip()
+            if git_content.startswith("gitdir: "):
+                gitdir_str = git_content[8:]  # Remove "gitdir: " prefix
+                # Handle both absolute and relative paths
+                gitdir = Path(gitdir_str)
+                if not gitdir.is_absolute():
+                    gitdir = (wt_path / gitdir).resolve()
+                hooks_dir = gitdir / "hooks"
+            else:
+                return  # Invalid .git file, skip hook installation
+        else:
+            # Regular repo (not a worktree)
+            hooks_dir = git_path / "hooks"
+
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        hook_path = hooks_dir / "post-checkout"
+
+        # Create hook that detects and prevents branch switches
+        hook_content = f"""#!/usr/bin/env bash
+# Claude-wt worktree protection hook
+# This worktree is locked to branch: {branch_name}
+
+prev_head="$1"
+new_head="$2"
+branch_checkout="$3"
+
+# Only check on branch switches (not file checkouts)
+if [ "$branch_checkout" = "1" ]; then
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    if [ "$current_branch" != "{branch_name}" ]; then
+        echo ""
+        echo "🚨🚨🚨 WORKTREE BRANCH SWITCH DETECTED! 🚨🚨🚨"
+        echo ""
+        echo "ERROR: You tried to switch away from branch '{branch_name}'"
+        echo "Current branch is now: $current_branch"
+        echo ""
+        echo "⚠️  This worktree is LOCKED to branch: {branch_name}"
+        echo "⚠️  Switching branches in a worktree causes file corruption and lost work!"
+        echo ""
+        echo "What you should do instead:"
+        echo "  1. Switch back: git checkout {branch_name}"
+        echo "  2. To work on '$current_branch': cd to main repo or different worktree"
+        echo "  3. Use: claude-wt switch (to switch between worktrees)"
+        echo "  4. Use: claude-wt list (to see all worktrees)"
+        echo ""
+        echo "Switching back to {branch_name} now..."
+        echo ""
+
+        # Automatically switch back to the correct branch
+        git checkout {branch_name} 2>/dev/null
+
+        exit 1
+    fi
+fi
+
+exit 0
+"""
+
+        hook_path.write_text(hook_content)
+        hook_path.chmod(0o755)  # Make executable
+
+    except Exception:
+        # Silently fail if hook installation doesn't work (e.g., in tests or restricted environments)
+        pass
 
 
 def check_gitignore(repo_root: Path) -> bool:

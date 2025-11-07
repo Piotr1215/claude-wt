@@ -142,6 +142,10 @@ branch main
         mock_wt1 = Mock()
         mock_wt1.name = "claude-wt-session1"
         mock_wt1.is_dir.return_value = True
+        # Mock .git path check for new worktree detection
+        mock_git_path = Mock()
+        mock_git_path.exists.return_value = True
+        mock_wt1.__truediv__ = Mock(return_value=mock_git_path)
 
         mock_wt_base1.iterdir.return_value = [mock_wt1]
         mock_scan_path.glob.return_value = [mock_wt_base1]
