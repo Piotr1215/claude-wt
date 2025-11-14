@@ -167,18 +167,9 @@ def handle_linear_issue(
         # Create worktree if needed
         if not worktree_path:
             # Ensure we're on main and up to date
+            # Fetch latest from origin - no need to checkout main!
             subprocess.run(
                 ["git", "-C", str(repo_root), "fetch", "origin"],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(repo_root), "checkout", "main"],
-                check=True,
-                capture_output=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(repo_root), "pull", "--ff-only"],
                 check=True,
                 capture_output=True,
             )
@@ -197,9 +188,9 @@ def handle_linear_issue(
             )
 
             if result.returncode != 0:
-                # Create new branch
+                # Create new branch from origin/main (not local main!)
                 subprocess.run(
-                    ["git", "-C", str(repo_root), "branch", branch_name, "main"],
+                    ["git", "-C", str(repo_root), "branch", branch_name, "origin/main"],
                     check=True,
                 )
 

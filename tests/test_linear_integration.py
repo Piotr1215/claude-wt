@@ -62,13 +62,9 @@ class TestLinearIssueHandling:
             Mock(stdout="", returncode=0),
             # git fetch origin
             Mock(returncode=0),
-            # git checkout main
-            Mock(returncode=0),
-            # git pull --ff-only
-            Mock(returncode=0),
             # git show-ref --verify (branch doesn't exist)
             Mock(returncode=1),
-            # git branch
+            # git branch (create from origin/main)
             Mock(returncode=0),
             # git worktree add
             Mock(returncode=0),
@@ -80,9 +76,10 @@ class TestLinearIssueHandling:
 
         # ASSERT
         assert exc_info.value.code == 0
-        # Verify branch was created with normalized name
-        branch_create_call = mock_subprocess.call_args_list[6]
+        # Verify branch was created with normalized name from origin/main
+        branch_create_call = mock_subprocess.call_args_list[4]  # Adjusted index (removed checkout+pull)
         assert "doc-975" in " ".join(branch_create_call[0][0])
+        assert "origin/main" in " ".join(branch_create_call[0][0])
 
     def test_handles_issue_id_with_slash(
         self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
@@ -100,13 +97,9 @@ class TestLinearIssueHandling:
             Mock(stdout="", returncode=0),
             # git fetch origin
             Mock(returncode=0),
-            # git checkout main
-            Mock(returncode=0),
-            # git pull --ff-only
-            Mock(returncode=0),
             # git show-ref --verify (branch doesn't exist)
             Mock(returncode=1),
-            # git branch
+            # git branch (create from origin/main)
             Mock(returncode=0),
             # git worktree add
             Mock(returncode=0),
@@ -118,13 +111,14 @@ class TestLinearIssueHandling:
 
         # ASSERT - Slashes should be replaced with dashes
         assert exc_info.value.code == 0
-        branch_create_call = mock_subprocess.call_args_list[6]
+        branch_create_call = mock_subprocess.call_args_list[4]  # Adjusted index
         branch_cmd = " ".join(branch_create_call[0][0])
         # Slash in issue ID should be converted to dash
         assert (
             "doc-975-malicious" in branch_cmd
             or "doc-975/doc-975-malicious" in branch_cmd
         )
+        assert "origin/main" in branch_cmd
 
     def test_non_interactive_creates_timestamped_branch(
         self,
@@ -147,13 +141,9 @@ class TestLinearIssueHandling:
             Mock(stdout="", returncode=0),
             # git fetch origin
             Mock(returncode=0),
-            # git checkout main
-            Mock(returncode=0),
-            # git pull --ff-only
-            Mock(returncode=0),
             # git show-ref --verify (branch doesn't exist)
             Mock(returncode=1),
-            # git branch
+            # git branch (create from origin/main)
             Mock(returncode=0),
             # git worktree add
             Mock(returncode=0),
@@ -169,10 +159,11 @@ class TestLinearIssueHandling:
         captured = capsys.readouterr()
         assert "doc-123" in captured.out.lower()
         # Verify timestamp format in branch name (YYYYMMDD-HHMMSS)
-        branch_create_call = mock_subprocess.call_args_list[6]
+        branch_create_call = mock_subprocess.call_args_list[4]  # Adjusted index
         branch_cmd = " ".join(branch_create_call[0][0])
         # Should contain year (20XX)
         assert any(f"20{y}" in branch_cmd for y in range(20, 30))
+        assert "origin/main" in branch_cmd
 
     def test_uses_existing_branch_without_recreation(
         self,
