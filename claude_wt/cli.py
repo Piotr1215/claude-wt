@@ -13,6 +13,7 @@ from .worktree import (
     clean_worktrees,
     create_new_worktree,
     list_worktrees_table,
+    materialize_branch,
     switch_worktree,
 )
 
@@ -281,6 +282,21 @@ def from_pr_noninteractive(
         Optional tmux session name to create and launch Claude
     """
     handle_pr_noninteractive(pr_number, repo_path, session_name)
+
+
+@app.command
+def materialize(branch_name: str):
+    """Materialize existing branch: materialize BRANCH-NAME
+
+    Creates a worktree from an existing local branch and launches Claude in tmux.
+    Used by lazygit integration - the ONLY way to create worktrees from existing branches.
+
+    Parameters
+    ----------
+    branch_name : str
+        Name of the existing local branch to materialize
+    """
+    materialize_branch(branch_name)
 
 
 if __name__ == "__main__":

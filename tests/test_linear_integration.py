@@ -47,8 +47,20 @@ class TestLinearIssueHandling:
         with patch("claude_wt.linear.create_worktree_context") as mock:
             yield mock
 
+    @pytest.fixture
+    def mock_copy_files(self):
+        """Mock copy_gitignored_files function."""
+        with patch("claude_wt.linear.copy_gitignored_files") as mock:
+            yield mock
+
+    @pytest.fixture
+    def mock_install_hook(self):
+        """Mock install_branch_protection_hook function."""
+        with patch("claude_wt.linear.install_branch_protection_hook") as mock:
+            yield mock
+
     def test_normalizes_issue_id_to_doc_prefix(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """Test issue ID normalization to doc- prefix.
 
@@ -82,7 +94,7 @@ class TestLinearIssueHandling:
         assert "origin/main" in " ".join(branch_create_call[0][0])
 
     def test_handles_issue_id_with_slash(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """SECURITY: Reject issue IDs with path traversal attempts.
 
@@ -215,7 +227,7 @@ class TestLinearIssueHandling:
         assert "-a" in branch_commands[0]
 
     def test_creates_worktree_context_file(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """Test that CLAUDE.md context file is created.
 
@@ -254,7 +266,7 @@ class TestLinearIssueHandling:
         assert "DOC-456" in call_args[0]
 
     def test_handles_git_fetch_failure(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """Test error handling when git fetch fails.
 
@@ -323,7 +335,7 @@ class TestLinearIssueHandling:
         assert "doc-999" in captured.out.lower()
 
     def test_skips_zenity_in_non_interactive_mode(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """Test that zenity is not called in non-interactive mode.
 
@@ -369,7 +381,7 @@ class TestLinearIssueHandling:
         )
 
     def test_creates_tmux_session_when_requested(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """Test tmux session creation with session_name parameter.
 
@@ -421,7 +433,7 @@ class TestLinearIssueHandling:
         assert len(tmux_calls) >= 3  # has-session, new-session, send-keys
 
     def test_uses_slash_command_for_linear_issue(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_git_repo
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
     ):
         """Test Claude is launched with /ops-linear-issue slash command.
 
@@ -484,6 +496,42 @@ class TestLinearIssueHandling:
         assert "Working on issue" not in claude_cmd, (
             "Should use slash command, not plain text description"
         )
+
+    def test_copies_gitignored_files_to_worktree(
+        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+    ):
+        """Test that .envrc, .mcp.json, .claude/, and CLAUDE.md are copied.
+
+        BEHAVIOR: All worktree creation must copy gitignored config files
+        to ensure consistent development environment across worktrees.
+        """
+        # ARRANGE
+        mock_subprocess.side_effect = [
+            Mock(stdout=str(mock_git_repo), returncode=0),  # git rev-parse
+            Mock(stdout="", returncode=0),  # git branch -a
+            Mock(returncode=0),  # git fetch
+            Mock(returncode=0),  # git checkout main
+            Mock(returncode=0),  # git pull
+            Mock(returncode=1),  # git show-ref (branch doesn't exist)
+            Mock(returncode=0),  # git branch
+            Mock(returncode=0),  # git worktree add
+        ]
+
+        # ACT
+        with pytest.raises(SystemExit):
+            handle_linear_issue("DOC-999", interactive=False)
+
+        # ASSERT
+        assert mock_copy_files.called, "copy_gitignored_files() must be called"
+        assert mock_install_hook.called, "install_branch_protection_hook() must be called"
+
+        # Verify copy_files was called with correct arguments
+        call_args = mock_copy_files.call_args
+        assert call_args is not None, "copy_gitignored_files() should have arguments"
+        repo_root_arg = call_args[0][0]
+        worktree_path_arg = call_args[0][1]
+        assert repo_root_arg is not None, "repo_root should be provided"
+        assert worktree_path_arg is not None, "worktree_path should be provided"
 
 
 class TestLinearIssueIDValidation:

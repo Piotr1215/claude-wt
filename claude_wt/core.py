@@ -159,6 +159,112 @@ exit 0
         pass
 
 
+def copy_gitignored_files(repo_root: Path, wt_path: Path) -> None:
+    """Copy all gitignored files from .gitignore patterns to worktree.
+
+    Reads .gitignore (local + global) and attempts to copy all matching files.
+    Silently fails if files don't exist.
+    """
+    import subprocess
+    import shutil
+
+    patterns = []
+
+    # Read local .gitignore
+    local_gitignore = repo_root / ".gitignore"
+    if local_gitignore.exists():
+        patterns.extend(_parse_gitignore(local_gitignore))
+
+    # Read global gitignore
+    global_gitignore = _get_global_gitignore()
+    if global_gitignore and global_gitignore.exists():
+        patterns.extend(_parse_gitignore(global_gitignore))
+
+    # Read .git/info/exclude
+    git_exclude = repo_root / ".git" / "info" / "exclude"
+    if git_exclude.exists():
+        patterns.extend(_parse_gitignore(git_exclude))
+
+    # Try to copy each pattern
+    for pattern in patterns:
+        _try_copy_pattern(pattern, repo_root, wt_path)
+
+
+def _parse_gitignore(gitignore_file: Path) -> list[str]:
+    """Parse gitignore file and return list of patterns."""
+    patterns = []
+    try:
+        with open(gitignore_file) as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments, empty lines, and negations
+                if not line or line.startswith("#") or line.startswith("!"):
+                    continue
+                patterns.append(line)
+    except Exception:
+        pass  # Silent failure
+    return patterns
+
+
+def _get_global_gitignore() -> Path | None:
+    """Get global gitignore path from git config."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", "core.excludesfile"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            return Path(result.stdout.strip()).expanduser()
+    except Exception:
+        pass
+
+    # Fallback to common location
+    default = Path.home() / ".gitignore_global"
+    return default if default.exists() else None
+
+
+def _try_copy_pattern(pattern: str, repo_root: Path, wt_path: Path) -> None:
+    """Try to copy files matching gitignore pattern. No exclusions."""
+    # Remove leading/trailing slashes
+    pattern = pattern.strip("/")
+
+    # Handle glob patterns
+    if "*" in pattern or "?" in pattern or "[" in pattern:
+        try:
+            for source in repo_root.glob(pattern):
+                _try_copy_path(source, wt_path / source.name)
+        except Exception:
+            pass  # Invalid glob pattern, skip
+    else:
+        # Direct path
+        source = repo_root / pattern
+        _try_copy_path(source, wt_path / pattern)
+
+
+def _try_copy_path(source: Path, dest: Path) -> None:
+    """Try to copy a single path (file or directory). Silent failure."""
+    import shutil
+
+    if not source.exists():
+        return
+
+    try:
+        if source.is_dir():
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(source, dest, symlinks=True)
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)
+    except Exception:
+        pass  # Silent failure
+
+
 def check_gitignore(repo_root: Path) -> bool:
     """Check if .claude-wt/worktrees is in .gitignore (local or global)"""
     patterns_to_check = [

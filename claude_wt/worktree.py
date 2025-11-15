@@ -9,6 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .core import (
+    copy_gitignored_files,
     create_worktree_context,
     get_worktree_base,
     install_branch_protection_hook,
@@ -91,37 +92,40 @@ def select_worktree_fzf(
     if not worktrees:
         return None
 
-    # Create fzf input
+    # Create fzf input with better formatting
     fzf_input = []
     for wt in sorted(worktrees, key=lambda x: (x["repo"], x["session"])):
         exists = "[OK]" if Path(wt["path"]).exists() else "[X]"
-        fzf_input.append(f"{exists} {wt['repo']:<20} {wt['session']:<30} {wt['path']}")
+        # Shorter columns for cleaner display
+        fzf_input.append(f"{exists} {wt['repo']:<15} {wt['session']:<35} {wt['path']}")
 
-    # Preview command to show worktree info
+    # Preview command - use pure bash, no external commands like basename
     preview_cmd = """
         path=$(echo {} | awk '{{print $NF}}');
         if [ -d "$path" ]; then
-            echo "Worktree: $(basename "$path")";
+            name="${{path##*/}}";
+            echo "Worktree: $name";
             echo "";
             if [ -d "$path/.git" ]; then
-                cd "$path" 2>/dev/null && {
+                cd "$path" 2>/dev/null && {{
                     echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')";
-                    echo "Repo: $(basename $(git rev-parse --show-toplevel 2>/dev/null || echo 'unknown'))";
+                    repo=$(git rev-parse --show-toplevel 2>/dev/null);
+                    echo "Repo: ${{repo##*/}}";
                     echo "";
                     echo "Status:";
-                    git status --short 2>/dev/null || echo "  (no changes)";
+                    git status --short 2>/dev/null || echo "  (clean)";
                     echo "";
                     echo "Recent commits:";
                     git log --oneline --color=always -5 2>/dev/null || echo "  (no commits)";
                     echo "";
                     echo "Files:";
-                    ls -lah --color=always 2>/dev/null | head -15;
-                }
+                    ls -lh --color=always 2>/dev/null | head -10;
+                }}
             else
                 echo "(Not a git worktree)";
             fi
         else
-            echo "WARNING: Worktree not found";
+            echo "WARNING: Path not found";
         fi
     """
 
@@ -334,6 +338,9 @@ def create_new_worktree(
     # Create worktree context file
     create_worktree_context(wt_path, f"claude-wt-{suffix}", branch_name, repo_root)
 
+    # Copy gitignored config files (.envrc, .mcp.json, .claude/, CLAUDE.md)
+    copy_gitignored_files(repo_root, wt_path)
+
     # Install branch protection hook
     install_branch_protection_hook(wt_path, branch_name)
 
@@ -361,6 +368,84 @@ def create_new_worktree(
     # Create and switch to tmux session and launch Claude
     session_name = f"wt-{suffix}"
     create_tmux_session(session_name, wt_path, repo_root, query, resume=False)
+
+
+def materialize_branch(branch_name: str):
+    """Create worktree from existing local branch and launch Claude in tmux.
+
+    Used by lazygit integration to materialize a local branch into a worktree.
+    This is the ONLY way to create worktrees - ensures consistency.
+    """
+    from pathlib import Path
+    import subprocess
+
+    # Get repo root
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        repo_root = Path(result.stdout.strip())
+    except subprocess.CalledProcessError:
+        console.print("[red]Error: Not in a git repository[/red]")
+        raise SystemExit(1)
+
+    repo_name = repo_root.name
+
+    # Verify the branch exists locally
+    try:
+        subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
+            check=True,
+            cwd=repo_root,
+        )
+    except subprocess.CalledProcessError:
+        console.print(f"[red]Error: Branch '{branch_name}' does not exist locally[/red]")
+        raise SystemExit(1)
+
+    # Setup external worktree path
+    worktree_base = get_worktree_base(repo_root)
+    worktree_base.mkdir(parents=True, exist_ok=True)
+
+    # Sanitize branch name for filesystem
+    safe_branch = branch_name.replace("/", "-")
+    wt_name = f"{repo_name}-{safe_branch}"
+    wt_path = worktree_base / wt_name
+
+    # Check if worktree already exists
+    if wt_path.exists():
+        console.print(f"[yellow]Worktree already exists at {wt_path}[/yellow]")
+        console.print("[cyan]Resuming existing session...[/cyan]")
+    else:
+        # Create the worktree
+        try:
+            subprocess.run(
+                ["git", "worktree", "add", str(wt_path), branch_name],
+                check=True,
+                cwd=repo_root,
+                capture_output=True,
+            )
+            console.print(f"[green]Created worktree at {wt_path}[/green]")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error creating worktree: {e}[/red]")
+            raise SystemExit(1)
+
+        # Create worktree context file
+        create_worktree_context(wt_path, branch_name, branch_name, repo_root)
+
+        # Copy gitignored config files (.envrc, .mcp.json, .claude/, CLAUDE.md)
+        copy_gitignored_files(repo_root, wt_path)
+
+        # Install branch protection hook
+        install_branch_protection_hook(wt_path, branch_name)
+
+    # Create and switch to tmux session
+    session_name = f"wt-{wt_name}"
+    create_tmux_session(session_name, wt_path, repo_root, query="", resume=False)
+
+    console.print(f"[green]Switched to session: {session_name}[/green]")
 
 
 def list_worktrees_table(scan_dir: str | None = None):

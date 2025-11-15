@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from .core import (
+    copy_gitignored_files,
     create_worktree_context,
     get_worktree_base,
     install_branch_protection_hook,
@@ -172,6 +173,9 @@ def handle_pr_interactive(pr_number: str = "", query: str = ""):
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(wt_path, f"PR #{pr_number}", pr_branch, repo_root)
+
+        # Copy gitignored config files (.envrc, .mcp.json, .claude/, CLAUDE.md)
+        copy_gitignored_files(repo_root, wt_path)
 
         # Install branch protection hook
         install_branch_protection_hook(wt_path, pr_branch)
@@ -351,6 +355,9 @@ def handle_pr_noninteractive(
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(wt_path, f"PR #{pr_number}", pr_branch, repo_root)
+
+        # Copy gitignored config files (.envrc, .mcp.json, .claude/, CLAUDE.md)
+        copy_gitignored_files(repo_root, wt_path)
 
         # Install branch protection hook
         install_branch_protection_hook(wt_path, pr_branch)

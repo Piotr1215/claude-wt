@@ -256,6 +256,8 @@ class TestFromPRNoninteractive:
         )
 
     @patch("claude_wt.github.launch_claude_in_tmux")
+    @patch("claude_wt.github.install_branch_protection_hook")
+    @patch("claude_wt.github.copy_gitignored_files")
     @patch("claude_wt.github.create_worktree_context")
     @patch("claude_wt.github.get_worktree_base")
     @patch("claude_wt.github.resolve_repo_path")
@@ -268,6 +270,8 @@ class TestFromPRNoninteractive:
         mock_resolve,
         mock_worktree_base,
         mock_context,
+        mock_copy_files,
+        mock_install_hook,
         mock_launch_claude,
     ):
         """Test PR handler ONLY uses /ops-pr-review, no Linear ID or skill activation.

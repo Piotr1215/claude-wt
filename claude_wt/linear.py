@@ -5,6 +5,7 @@ import sys
 from datetime import datetime
 
 from .core import (
+    copy_gitignored_files,
     create_worktree_context,
     get_worktree_base,
     install_branch_protection_hook,
@@ -215,6 +216,9 @@ def handle_linear_issue(
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(worktree_path, issue_id, branch_name, repo_root)
+
+        # Copy gitignored config files (.envrc, .mcp.json, .claude/, CLAUDE.md)
+        copy_gitignored_files(repo_root, worktree_path)
 
         # Install branch protection hook
         install_branch_protection_hook(worktree_path, branch_name)
