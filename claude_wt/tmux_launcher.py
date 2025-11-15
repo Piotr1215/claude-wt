@@ -67,9 +67,13 @@ def _send_claude_command(
 
     Cyclomatic Complexity: 1 (no branching)
     """
+    # Build Claude command with KUBECONFIG and explicit path
+    claude_launcher = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+    kubeconfig = "/home/decoder/dev/homelab/kubeconfig"
+
     claude_cmd = (
-        f"claude --dangerously-skip-permissions "
-        f'--add-dir {worktree_path} -- "{initial_prompt}"'
+        f"KUBECONFIG={kubeconfig} {claude_launcher} "
+        f'--dangerously-skip-permissions -- "{initial_prompt}"'
     )
 
     subprocess.run(

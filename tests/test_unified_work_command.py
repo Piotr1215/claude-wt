@@ -369,7 +369,8 @@ class TestTmuxClaudeLauncher:
         # Verify Claude command structure
         claude_cmd = " ".join(call_args)
         assert "--dangerously-skip-permissions" in claude_cmd
-        assert f"--add-dir {worktree}" in claude_cmd
+        assert "KUBECONFIG=/home/decoder/dev/homelab/kubeconfig" in claude_cmd
+        assert "__claude_with_monitor.sh" in claude_cmd
         assert prompt in claude_cmd
 
 
