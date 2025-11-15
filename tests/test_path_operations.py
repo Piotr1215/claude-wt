@@ -16,20 +16,20 @@ class TestPathOperations:
     """Test path-related operations."""
 
     def test_get_worktree_base_creates_sibling_directory(self):
-        """Test that worktree base is a sibling directory to the repo."""
+        """Test that worktree base uses centralized directory."""
         repo_root = Path("/home/user/projects/my-repo")
-        expected = Path("/home/user/projects/my-repo-worktrees")
+        # Centralized directory - repo location doesn't affect worktree base
+        expected = Path.home() / "dev" / "claude-wt-worktrees"
 
         result = get_worktree_base(repo_root)
 
         assert result == expected
-        assert result.parent == repo_root.parent
-        assert result.name == f"{repo_root.name}-worktrees"
 
     def test_get_worktree_base_handles_special_characters(self):
-        """Test worktree base handles repos with special characters."""
+        """Test worktree base uses centralized directory regardless of repo name."""
         repo_root = Path("/home/user/projects/my.special-repo_v2")
-        expected = Path("/home/user/projects/my.special-repo_v2-worktrees")
+        # Centralized directory - repo name doesn't affect the path
+        expected = Path.home() / "dev" / "claude-wt-worktrees"
 
         result = get_worktree_base(repo_root)
 
@@ -138,17 +138,18 @@ class TestPathOperations:
         assert worktree_base.is_absolute()
 
     def test_worktree_base_preserves_parent_structure(self):
-        """Test that worktree base maintains the same parent directory."""
+        """Test that worktree base uses centralized directory."""
         repo_paths = [
             Path("/home/user/dev/project1"),
             Path("/var/repos/company/service"),
             Path("/opt/code/my-app"),
         ]
 
+        # All repos use same centralized directory
+        expected = Path.home() / "dev" / "claude-wt-worktrees"
         for repo_path in repo_paths:
             worktree_base = get_worktree_base(repo_path)
-            assert worktree_base.parent == repo_path.parent
-            assert worktree_base.name == f"{repo_path.name}-worktrees"
+            assert worktree_base == expected
 
     def test_create_worktree_context_includes_commands(self, tmp_path):
         """Test that CLAUDE.md includes helpful git commands and warnings."""

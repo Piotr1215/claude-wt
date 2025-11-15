@@ -20,36 +20,61 @@ console = Console()
 
 
 def list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
-    """Scan filesystem for all claude-wt worktrees.
+    """Scan centralized worktree directory for all worktrees.
 
     Returns list of dicts with keys: path, repo, session
     """
-    scan_path = Path(scan_dir).expanduser()
+    # Use centralized directory from core.get_worktree_base
+    from pathlib import Path as PathLib
+    worktree_base = PathLib.home() / "dev" / "claude-wt-worktrees"
 
-    if not scan_path.exists():
+    if not worktree_base.exists():
         return []
 
-    worktree_dirs = list(scan_path.glob("*-worktrees"))
     all_worktrees = []
 
-    for wt_base in worktree_dirs:
-        if not wt_base.is_dir():
-            continue
+    for wt_path in worktree_base.iterdir():
+        # Check if it's actually a git worktree (has .git file pointing to main repo)
+        if wt_path.is_dir() and (wt_path / ".git").exists():
+            wt_name = wt_path.name
 
-        for wt_path in list(wt_base.iterdir()):
-            # Check if it's actually a git worktree (has .git file pointing to main repo)
-            if wt_path.is_dir() and (wt_path / ".git").exists():
-                repo_name = wt_base.name.replace("-worktrees", "")
-                # Extract session name - remove claude-wt- prefix if present
-                session_name = wt_path.name
-                if session_name.startswith("claude-wt-"):
-                    session_name = session_name.replace("claude-wt-", "", 1)
+            # Try to extract repo and session from name: {repo}-{branch}
+            # Look for actual git info
+            try:
+                import subprocess
+                git_dir = subprocess.run(
+                    ["git", "-C", str(wt_path), "rev-parse", "--git-common-dir"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+                repo_root = Path(git_dir).parent
+                repo_name = repo_root.name
+
+                # Get branch name
+                branch_name = subprocess.run(
+                    ["git", "-C", str(wt_path), "rev-parse", "--abbrev-ref", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+
+                session_name = branch_name.replace("claude-wt-", "").replace("/", "-")
 
                 all_worktrees.append(
                     {
                         "path": str(wt_path),
                         "repo": repo_name,
                         "session": session_name,
+                    }
+                )
+            except Exception:
+                # Fallback: just use directory name
+                all_worktrees.append(
+                    {
+                        "path": str(wt_path),
+                        "repo": "unknown",
+                        "session": wt_name,
                     }
                 )
 
@@ -59,7 +84,7 @@ def list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
 def select_worktree_fzf(
     worktrees: list[dict], prompt: str = "Select worktree"
 ) -> dict | None:
-    """Show fzf picker for worktrees.
+    """Show fzf picker for worktrees with preview.
 
     Returns selected worktree dict or None if cancelled.
     """
@@ -72,18 +97,52 @@ def select_worktree_fzf(
         exists = "[OK]" if Path(wt["path"]).exists() else "[X]"
         fzf_input.append(f"{exists} {wt['repo']:<20} {wt['session']:<30} {wt['path']}")
 
-    # Use fzf to select
+    # Preview command to show worktree info
+    preview_cmd = """
+        path=$(echo {} | awk '{{print $NF}}');
+        if [ -d "$path" ]; then
+            echo "Worktree: $(basename "$path")";
+            echo "";
+            if [ -d "$path/.git" ]; then
+                cd "$path" 2>/dev/null && {
+                    echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')";
+                    echo "Repo: $(basename $(git rev-parse --show-toplevel 2>/dev/null || echo 'unknown'))";
+                    echo "";
+                    echo "Status:";
+                    git status --short 2>/dev/null || echo "  (no changes)";
+                    echo "";
+                    echo "Recent commits:";
+                    git log --oneline --color=always -5 2>/dev/null || echo "  (no commits)";
+                    echo "";
+                    echo "Files:";
+                    ls -lah --color=always 2>/dev/null | head -15;
+                }
+            else
+                echo "(Not a git worktree)";
+            fi
+        else
+            echo "WARNING: Worktree not found";
+        fi
+    """
+
+    # Use fzf to select with preview
     try:
         result = subprocess.run(
             [
                 "fzf",
                 "--height",
-                "40%",
+                "90%",
                 "--reverse",
+                "--border=rounded",
                 "--header",
-                prompt,
+                f"{prompt}\n↑↓: navigate | Enter: switch | Esc: cancel",
                 "--prompt",
                 "> ",
+                "--preview",
+                preview_cmd,
+                "--preview-window",
+                "right:60%:wrap",
+                "--ansi",
             ],
             input="\n".join(fzf_input),
             capture_output=True,
@@ -260,10 +319,13 @@ def create_new_worktree(
             check=True,
         )
 
-    # Setup external worktree path in sibling directory
+    # Setup centralized worktree path with repo prefix to avoid conflicts
     worktree_base = get_worktree_base(repo_root)
     worktree_base.mkdir(parents=True, exist_ok=True)
-    wt_path = worktree_base / branch_name
+    repo_name = repo_root.name
+    # Format: {repo}-{branch} to avoid conflicts across repos
+    wt_name = f"{repo_name}-{branch_name.replace('/', '-')}"
+    wt_path = worktree_base / wt_name
 
     # Create worktree if needed
     if not wt_path.exists():

@@ -7,9 +7,9 @@ from pathlib import Path
 
 
 def get_worktree_base(repo_root: Path) -> Path:
-    """Get the external worktree base directory (sibling to repo)."""
-    repo_name = repo_root.name
-    return repo_root.parent / f"{repo_name}-worktrees"
+    """Get the centralized worktree directory for all repos."""
+    # Use centralized directory for all worktrees
+    return Path.home() / "dev" / "claude-wt-worktrees"
 
 
 def is_claude_wt_worktree(worktree: dict) -> bool:

@@ -148,8 +148,9 @@ class TestTmuxIntegration:
         assert len(new_session_cmds) > 0
         # Check that the session is created with -c flag for working directory
         assert any("-c" in cmd for cmd in new_session_cmds)
+        # Check for centralized worktree path with repo prefix
         assert any(
-            "/home/user/repo-worktrees/claude-wt-tmux-window-test" in str(cmd)
+            "claude-wt-worktrees/repo-claude-wt-tmux-window-test" in str(cmd)
             for cmd in new_session_cmds
         )
 
@@ -186,8 +187,9 @@ class TestTmuxIntegration:
                             # Verify only the path was printed
                             mock_print.assert_called_once()
                             printed_path = mock_print.call_args[0][0]
+                            # Check for centralized worktree path with repo prefix
                             assert (
-                                "/home/user/repo-worktrees/claude-wt-path-test"
+                                "claude-wt-worktrees/repo-claude-wt-path-test"
                                 in printed_path
                             )
 

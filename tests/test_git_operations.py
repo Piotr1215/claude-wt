@@ -123,41 +123,39 @@ branch main
         remove_calls = [call for call in calls if "remove" in str(call)]
         assert len(remove_calls) >= 2  # At least 2 worktrees removed
 
-    @patch("claude_wt.cli.Path.glob")
-    @patch("claude_wt.cli.Path.exists")
-    @patch("claude_wt.cli.Path.expanduser")
-    def test_list_shows_claude_worktrees(self, mock_expanduser, mock_exists, mock_glob):
-        """Test that list command scans directories and shows claude-wt worktrees."""
-        # Mock the scan path
-        mock_scan_path = Mock()
-        mock_expanduser.return_value = mock_scan_path
-        mock_scan_path.exists.return_value = True
+    def test_list_shows_claude_worktrees(self, tmp_path, capsys):
+        """Test that list displays worktrees from centralized directory.
 
-        # Mock worktree base directories
-        mock_wt_base1 = Mock()
-        mock_wt_base1.name = "repo1-worktrees"
-        mock_wt_base1.is_dir.return_value = True
+        BEHAVIOR: Scans centralized worktrees and displays them in a table
+        ISOLATED: Uses tmp_path, mocks Path.home() and git commands
+        FAST: No real git operations, all mocked
+        REPEATABLE: Deterministic with controlled mocks
+        SELF-CHECKING: Asserts actual table output content
+        """
+        # ARRANGE: Create centralized worktree structure
+        worktree_base = tmp_path / "dev" / "claude-wt-worktrees"
+        worktree_base.mkdir(parents=True)
 
-        # Mock claude-wt worktrees
-        mock_wt1 = Mock()
-        mock_wt1.name = "claude-wt-session1"
-        mock_wt1.is_dir.return_value = True
-        # Mock .git path check for new worktree detection
-        mock_git_path = Mock()
-        mock_git_path.exists.return_value = True
-        mock_wt1.__truediv__ = Mock(return_value=mock_git_path)
+        # Create test worktree with .git file (worktree marker)
+        test_wt = worktree_base / "myrepo-feature-x"
+        test_wt.mkdir()
+        (test_wt / ".git").write_text("gitdir: /tmp/fake/.git/worktrees/myrepo-feature-x")
 
-        mock_wt_base1.iterdir.return_value = [mock_wt1]
-        mock_scan_path.glob.return_value = [mock_wt_base1]
+        # ACT: Run list with mocked Path.home() and git commands
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            with patch("claude_wt.worktree.subprocess.run") as mock_run:
+                # Mock git commands: git-common-dir, then branch name
+                mock_run.side_effect = [
+                    Mock(stdout="/tmp/fake/.git", returncode=0),
+                    Mock(stdout="feature-x", returncode=0),
+                ]
 
-        # Mock Path.exists for worktree paths
-        mock_exists.return_value = True
+                # Execute
+                list_worktrees()
 
-        # This prints to console, so we just verify it doesn't error
-        list_worktrees()
-
-        # Verify glob was called to find *-worktrees directories
-        assert mock_scan_path.glob.called
+        # ASSERT: Verify worktree appears in output table
+        captured = capsys.readouterr()
+        assert "myrepo" in captured.out or "feature-x" in captured.out
 
     @patch("claude_wt.cli.subprocess.run")
     @patch("os.environ.get")
