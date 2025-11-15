@@ -139,7 +139,7 @@ def create_worktree(repo_root: Path, branch_name: str, wt_path: Path) -> None:
 
         # Setup git-crypt keys in worktree's git directory
         console.print("[cyan]Setting up git-crypt keys in worktree...[/cyan]")
-        worktree_git_dir = repo_root / ".git" / "worktrees" / branch_name
+        worktree_git_dir = repo_root / ".git" / "worktrees" / wt_path.name
         worktree_git_crypt_dir = worktree_git_dir / "git-crypt"
         main_git_crypt_dir = repo_root / ".git" / "git-crypt"
 
