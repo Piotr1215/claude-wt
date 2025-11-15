@@ -1,5 +1,6 @@
 """Worktree operations for claude-wt."""
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -106,20 +107,76 @@ def select_worktree_fzf(
 
 
 def create_worktree(repo_root: Path, branch_name: str, wt_path: Path) -> None:
-    """Create a git worktree."""
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo_root),
-            "worktree",
-            "add",
-            "--quiet",
-            str(wt_path),
-            branch_name,
-        ],
-        check=True,
-    )
+    """Create a git worktree, handling git-crypt if present."""
+    # Check if git-crypt is in use
+    git_crypt_dir = repo_root / ".git" / "git-crypt"
+    use_git_crypt = git_crypt_dir.exists()
+
+    if use_git_crypt:
+        # Disable git-crypt filters during worktree creation
+        console.print("[cyan]Detected git-crypt, creating worktree without filters...[/cyan]")
+        env = os.environ.copy()
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "-c",
+                "filter.git-crypt.smudge=cat",
+                "-c",
+                "filter.git-crypt.clean=cat",
+                "-c",
+                "diff.git-crypt.textconv=cat",
+                "worktree",
+                "add",
+                "--quiet",
+                str(wt_path),
+                branch_name,
+            ],
+            check=True,
+            env=env,
+        )
+
+        # Setup git-crypt keys in worktree's git directory
+        console.print("[cyan]Setting up git-crypt keys in worktree...[/cyan]")
+        worktree_git_dir = repo_root / ".git" / "worktrees" / branch_name
+        worktree_git_crypt_dir = worktree_git_dir / "git-crypt"
+        main_git_crypt_dir = repo_root / ".git" / "git-crypt"
+
+        if main_git_crypt_dir.exists() and not worktree_git_crypt_dir.exists():
+            # Create symlink to main repo's git-crypt directory
+            worktree_git_crypt_dir.parent.mkdir(parents=True, exist_ok=True)
+            worktree_git_crypt_dir.symlink_to(main_git_crypt_dir, target_is_directory=True)
+            console.print("[green]✓ Git-crypt keys linked[/green]")
+
+        # Reset files to decrypt them
+        console.print("[cyan]Decrypting files in worktree...[/cyan]")
+        result = subprocess.run(
+            ["git", "-C", str(wt_path), "reset", "--hard", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(
+                f"[yellow]Warning: Could not decrypt files: {result.stderr}[/yellow]"
+            )
+        else:
+            console.print("[green]✓ Files decrypted[/green]")
+    else:
+        # Normal worktree creation
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "worktree",
+                "add",
+                "--quiet",
+                str(wt_path),
+                branch_name,
+            ],
+            check=True,
+        )
 
 
 def create_new_worktree(
@@ -153,24 +210,30 @@ def create_new_worktree(
         )
         source_branch = result.stdout.strip()
 
+    # Check if source_branch is a remote reference (e.g., origin/branch-name)
+    is_remote_ref = "/" in source_branch
+
     # Optionally sync with origin (skip by default for speed)
     if pull:
         console.print("[cyan]Fetching latest changes...[/cyan]")
         subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
-        subprocess.run(
-            ["git", "-C", str(repo_root), "switch", "--quiet", source_branch],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"], check=True
-        )
+        if not is_remote_ref:
+            subprocess.run(
+                ["git", "-C", str(repo_root), "switch", "--quiet", source_branch],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"],
+                check=True,
+            )
         console.print("[green]✓ Synced with origin[/green]")
     else:
-        # Just ensure we're on the source branch (fast)
-        subprocess.run(
-            ["git", "-C", str(repo_root), "switch", "--quiet", source_branch],
-            check=True,
-        )
+        # Just ensure we're on the source branch (fast) - skip if remote ref
+        if not is_remote_ref:
+            subprocess.run(
+                ["git", "-C", str(repo_root), "switch", "--quiet", source_branch],
+                check=True,
+            )
 
     # Generate worktree branch name
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
