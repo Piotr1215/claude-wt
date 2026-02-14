@@ -1,8 +1,5 @@
 # claude-wt
 
-[![CI](https://github.com/anthropics/claude-wt/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropics/claude-wt/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/anthropics/claude-wt/branch/main/graph/badge.svg)](https://codecov.io/gh/anthropics/claude-wt)
-[![PyPI version](https://badge.fury.io/py/claude-wt.svg)](https://badge.fury.io/py/claude-wt)
 
 Manage multiple Claude Code sessions in parallel using git worktrees. Fast session creation, instant switching, zero conflicts.
 
