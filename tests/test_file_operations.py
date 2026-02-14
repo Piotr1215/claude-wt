@@ -8,9 +8,6 @@ Following FIRST principles:
 - Timely: Quick to execute
 """
 
-from pathlib import Path
-from unittest.mock import Mock, patch
-
 import pytest
 
 from claude_wt.core import copy_gitignored_files

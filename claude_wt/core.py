@@ -165,8 +165,6 @@ def copy_gitignored_files(repo_root: Path, wt_path: Path) -> None:
     Reads .gitignore (local + global) and attempts to copy all matching files.
     Silently fails if files don't exist.
     """
-    import subprocess
-    import shutil
 
     patterns = []
 

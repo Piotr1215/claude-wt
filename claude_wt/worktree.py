@@ -382,8 +382,8 @@ def materialize_branch(branch_name: str):
     Used by lazygit integration to materialize a local branch into a worktree.
     This is the ONLY way to create worktrees - ensures consistency.
     """
-    from pathlib import Path
     import subprocess
+    from pathlib import Path
 
     # Get repo root
     try:
