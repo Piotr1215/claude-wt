@@ -60,7 +60,13 @@ class TestLinearIssueHandling:
             yield mock
 
     def test_normalizes_issue_id_to_doc_prefix(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test issue ID normalization to doc- prefix.
 
@@ -89,12 +95,20 @@ class TestLinearIssueHandling:
         # ASSERT
         assert exc_info.value.code == 0
         # Verify branch was created with normalized name from origin/main
-        branch_create_call = mock_subprocess.call_args_list[4]  # Adjusted index (removed checkout+pull)
+        branch_create_call = mock_subprocess.call_args_list[
+            4
+        ]  # Adjusted index (removed checkout+pull)
         assert "doc-975" in " ".join(branch_create_call[0][0])
         assert "origin/main" in " ".join(branch_create_call[0][0])
 
     def test_handles_issue_id_with_slash(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """SECURITY: Reject issue IDs with path traversal attempts.
 
@@ -227,7 +241,13 @@ class TestLinearIssueHandling:
         assert "-a" in branch_commands[0]
 
     def test_creates_worktree_context_file(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test that CLAUDE.md context file is created.
 
@@ -266,7 +286,13 @@ class TestLinearIssueHandling:
         assert "DOC-456" in call_args[0]
 
     def test_handles_git_fetch_failure(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test error handling when git fetch fails.
 
@@ -335,7 +361,13 @@ class TestLinearIssueHandling:
         assert "doc-999" in captured.out.lower()
 
     def test_skips_zenity_in_non_interactive_mode(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test that zenity is not called in non-interactive mode.
 
@@ -381,7 +413,13 @@ class TestLinearIssueHandling:
         )
 
     def test_creates_tmux_session_when_requested(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test tmux session creation with session_name parameter.
 
@@ -433,7 +471,13 @@ class TestLinearIssueHandling:
         assert len(tmux_calls) >= 3  # has-session, new-session, send-keys
 
     def test_uses_slash_command_for_linear_issue(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test Claude is launched with /ops-linear-issue slash command.
 
@@ -498,7 +542,13 @@ class TestLinearIssueHandling:
         )
 
     def test_copies_gitignored_files_to_worktree(
-        self, mock_subprocess, mock_worktree_base, mock_context_creation, mock_copy_files, mock_install_hook, mock_git_repo
+        self,
+        mock_subprocess,
+        mock_worktree_base,
+        mock_context_creation,
+        mock_copy_files,
+        mock_install_hook,
+        mock_git_repo,
     ):
         """Test that .envrc, .mcp.json, .claude/, and CLAUDE.md are copied.
 
@@ -523,7 +573,9 @@ class TestLinearIssueHandling:
 
         # ASSERT
         assert mock_copy_files.called, "copy_gitignored_files() must be called"
-        assert mock_install_hook.called, "install_branch_protection_hook() must be called"
+        assert mock_install_hook.called, (
+            "install_branch_protection_hook() must be called"
+        )
 
         # Verify copy_files was called with correct arguments
         call_args = mock_copy_files.call_args

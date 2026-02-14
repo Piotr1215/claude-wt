@@ -25,6 +25,9 @@ class TestCopyGitignoredFiles:
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
 
+        # Create .gitignore listing the files to copy
+        (repo_root / ".gitignore").write_text(".envrc\n.mcp.json\nCLAUDE.md\n.claude\n")
+
         # Create sample config files
         (repo_root / ".envrc").write_text("export TEST=1\n")
         (repo_root / ".mcp.json").write_text('{"test": "data"}\n')

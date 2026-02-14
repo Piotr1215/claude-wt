@@ -139,7 +139,9 @@ branch main
         # Create test worktree with .git file (worktree marker)
         test_wt = worktree_base / "myrepo-feature-x"
         test_wt.mkdir()
-        (test_wt / ".git").write_text("gitdir: /tmp/fake/.git/worktrees/myrepo-feature-x")
+        (test_wt / ".git").write_text(
+            "gitdir: /tmp/fake/.git/worktrees/myrepo-feature-x"
+        )
 
         # ACT: Run list with mocked Path.home() and git commands
         with patch("pathlib.Path.home", return_value=tmp_path):

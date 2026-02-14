@@ -69,14 +69,16 @@ class TestMaterializeBranch:
         # ASSERT
         # Verify git show-ref was called to check branch exists
         show_ref_calls = [
-            call for call in mock_run.call_args_list
+            call
+            for call in mock_run.call_args_list
             if call[0] and "show-ref" in str(call[0][0])
         ]
         assert len(show_ref_calls) == 1, "Should verify branch exists"
 
         # Verify worktree was created
         worktree_add_calls = [
-            call for call in mock_run.call_args_list
+            call
+            for call in mock_run.call_args_list
             if call[0] and "worktree" in str(call[0][0]) and "add" in str(call[0][0])
         ]
         assert len(worktree_add_calls) == 1, "Should create worktree"
@@ -100,9 +102,12 @@ class TestMaterializeBranch:
         """
         # ARRANGE
         from subprocess import CalledProcessError
+
         mock_run.side_effect = [
             Mock(returncode=0, stdout=str(mock_repo_root), stderr=""),  # git rev-parse
-            CalledProcessError(1, ["git", "show-ref"]),  # git show-ref (branch doesn't exist)
+            CalledProcessError(
+                1, ["git", "show-ref"]
+            ),  # git show-ref (branch doesn't exist)
         ]
 
         # ACT & ASSERT
@@ -152,12 +157,15 @@ class TestMaterializeBranch:
         # ASSERT
         # Verify worktree path doesn't contain slashes
         worktree_add_call = [
-            call for call in mock_run.call_args_list
+            call
+            for call in mock_run.call_args_list
             if call[0] and "worktree" in str(call[0][0]) and "add" in str(call[0][0])
         ][0]
 
         wt_path_arg = str(worktree_add_call[0][0][3])  # 4th argument is path
-        assert "feature-auth-oauth" in wt_path_arg, "Slashes should be converted to hyphens"
+        assert "feature-auth-oauth" in wt_path_arg, (
+            "Slashes should be converted to hyphens"
+        )
         assert "feature/auth" not in wt_path_arg, "Path should not contain slashes"
 
     @patch("claude_wt.worktree.create_tmux_session")
@@ -192,7 +200,8 @@ class TestMaterializeBranch:
         # ASSERT
         # Verify worktree add was NOT called (already exists)
         worktree_add_calls = [
-            call for call in mock_run.call_args_list
+            call
+            for call in mock_run.call_args_list
             if call[0] and "worktree" in str(call[0][0]) and "add" in str(call[0][0])
         ]
         assert len(worktree_add_calls) == 0, "Should not recreate existing worktree"

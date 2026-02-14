@@ -27,6 +27,7 @@ def list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
     """
     # Use centralized directory from core.get_worktree_base
     from pathlib import Path as PathLib
+
     worktree_base = PathLib.home() / "dev" / "claude-wt-worktrees"
 
     if not worktree_base.exists():
@@ -43,6 +44,7 @@ def list_all_worktrees(scan_dir: str = "~/dev") -> list[dict]:
             # Look for actual git info
             try:
                 import subprocess
+
                 git_dir = subprocess.run(
                     ["git", "-C", str(wt_path), "rev-parse", "--git-common-dir"],
                     capture_output=True,
@@ -177,7 +179,9 @@ def create_worktree(repo_root: Path, branch_name: str, wt_path: Path) -> None:
 
     if use_git_crypt:
         # Disable git-crypt filters during worktree creation
-        console.print("[cyan]Detected git-crypt, creating worktree without filters...[/cyan]")
+        console.print(
+            "[cyan]Detected git-crypt, creating worktree without filters...[/cyan]"
+        )
         env = os.environ.copy()
         subprocess.run(
             [
@@ -209,7 +213,9 @@ def create_worktree(repo_root: Path, branch_name: str, wt_path: Path) -> None:
         if main_git_crypt_dir.exists() and not worktree_git_crypt_dir.exists():
             # Create symlink to main repo's git-crypt directory
             worktree_git_crypt_dir.parent.mkdir(parents=True, exist_ok=True)
-            worktree_git_crypt_dir.symlink_to(main_git_crypt_dir, target_is_directory=True)
+            worktree_git_crypt_dir.symlink_to(
+                main_git_crypt_dir, target_is_directory=True
+            )
             console.print("[green]✓ Git-crypt keys linked[/green]")
 
         # Reset files to decrypt them
@@ -402,7 +408,9 @@ def materialize_branch(branch_name: str):
             cwd=repo_root,
         )
     except subprocess.CalledProcessError:
-        console.print(f"[red]Error: Branch '{branch_name}' does not exist locally[/red]")
+        console.print(
+            f"[red]Error: Branch '{branch_name}' does not exist locally[/red]"
+        )
         raise SystemExit(1)
 
     # Setup external worktree path

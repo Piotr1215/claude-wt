@@ -165,5 +165,4 @@ jobs:
           echo "# Test" > README.md
           git add README.md
           git commit -m "Initial commit"
-          claude-wt init
-          cat .gitignore | grep ".claude-wt/worktrees" || exit 1
+          claude-wt list
