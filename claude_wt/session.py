@@ -11,11 +11,11 @@ def generate_session_name(repo_name: str, identifier: str) -> str:
     Format: {repo-name}-{sanitized-identifier}
 
     Examples:
-    - ("vcluster-docs", "DOC-123") -> "vcluster-docs-doc-123"
-    - ("my-project", "PR-456") -> "my-project-pr-456"
+    - ("vcluster-docs", "DOC-123") -> "vcluster-docs-DOC-123"
+    - ("my-project", "PR-456") -> "my-project-PR-456"
     - ("repo", "feature/auth") -> "repo-feature-auth"
 
     Cyclomatic Complexity: 1 (single transformation)
     """
-    sanitized = identifier.lower().replace("/", "-")
+    sanitized = identifier.replace("/", "-")
     return f"{repo_name}-{sanitized}"

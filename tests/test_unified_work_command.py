@@ -234,22 +234,22 @@ class TestSessionNameGeneration:
     def test_generates_session_name_for_linear_issue(self):
         """Generate session name for Linear issue.
 
-        BEHAVIOR: repo-name + linear-id in lowercase.
+        BEHAVIOR: repo-name + linear-id preserving case.
         """
         from claude_wt.session import generate_session_name
 
         result = generate_session_name("vcluster-docs", "DOC-123")
-        assert result == "vcluster-docs-doc-123"
+        assert result == "vcluster-docs-DOC-123"
 
     def test_generates_session_name_for_pr(self):
         """Generate session name for PR.
 
-        BEHAVIOR: repo-name + pr- + number.
+        BEHAVIOR: repo-name + PR identifier preserving case.
         """
         from claude_wt.session import generate_session_name
 
         result = generate_session_name("vcluster-docs", "PR-456")
-        assert result == "vcluster-docs-pr-456"
+        assert result == "vcluster-docs-PR-456"
 
     def test_generates_session_name_for_custom_branch(self):
         """Generate session name for custom branch.
