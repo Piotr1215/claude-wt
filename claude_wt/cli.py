@@ -1,3 +1,4 @@
+# PROJECT: claude-automation
 """Main CLI entry point for claude-wt."""
 
 import subprocess

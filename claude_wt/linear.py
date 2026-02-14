@@ -1,3 +1,4 @@
+# PROJECT: claude-automation
 """Linear issue integration for claude-wt."""
 
 import subprocess

@@ -1,3 +1,4 @@
+# PROJECT: claude-automation
 """Tmux session management and Claude launcher.
 
 Reusable launcher for all workflows (Linear, PR, custom).
@@ -68,7 +69,7 @@ def _send_claude_command(
     Cyclomatic Complexity: 1 (no branching)
     """
     # Build Claude command with KUBECONFIG and explicit path
-    claude_launcher = "/home/decoder/dev/dotfiles/scripts/__claude_with_monitor.sh"
+    claude_launcher = "/home/decoder/.claude/scripts/__claude_with_monitor.sh"
     kubeconfig = "/home/decoder/dev/homelab/kubeconfig"
 
     claude_cmd = (
