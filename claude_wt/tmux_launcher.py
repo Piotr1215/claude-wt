@@ -13,13 +13,12 @@ def launch_claude_in_tmux(
     session_name: str,
     worktree_path: Path,
     initial_prompt: str,
+    detached: bool = False,
 ) -> None:
     """Launch Claude in tmux session.
 
     Creates new session if needed, reuses existing session if present.
     Always sends Claude command to the session.
-
-    Cyclomatic Complexity: 2 (one if check for session existence)
     """
     session_exists = _check_session_exists(session_name)
 
@@ -27,7 +26,8 @@ def launch_claude_in_tmux(
         _create_tmux_session(session_name, worktree_path)
 
     _send_claude_command(session_name, worktree_path, initial_prompt)
-    _switch_to_session(session_name)
+    if not detached:
+        _switch_to_session(session_name)
 
 
 def _check_session_exists(session_name: str) -> bool:

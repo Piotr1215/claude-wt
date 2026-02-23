@@ -229,9 +229,8 @@ def handle_linear_issue(
 
         # If session_name provided, use shared tmux/Claude launcher
         if session_name:
-            # Use slash command to trigger Linear issue workflow
-            initial_prompt = f"/ops-linear-issue {issue_id}"
-            launch_claude_in_tmux(session_name, worktree_path, initial_prompt)
+            initial_prompt = f"/ops-autonomous-worker {issue_id}"
+            launch_claude_in_tmux(session_name, worktree_path, initial_prompt, detached=not interactive)
 
         # Successfully completed - worktree path already printed to stdout
         sys.exit(0)
