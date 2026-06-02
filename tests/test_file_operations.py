@@ -110,6 +110,56 @@ class TestCopyGitignoredFiles:
         assert (existing_claude / "test.txt").exists(), "New files should exist"
         assert (existing_claude / "test.txt").read_text() == "test content\n"
 
+    def test_copies_nested_env_files(self, tmp_path, mock_worktree):
+        """Test that .env files in subdirectories are copied to matching paths.
+
+        BEHAVIOR: A bare `.env` gitignore pattern matches at every depth in git,
+        but the per-pattern copy only resolves it at the repo root. Secrets often
+        live in a subdirectory (e.g. pr-review/.env), so those must be copied too,
+        preserving their relative path.
+        """
+        # ARRANGE
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".gitignore").write_text(".env\n")
+        (repo_root / ".env").write_text("ROOT=1\n")
+        nested = repo_root / "pr-review"
+        nested.mkdir()
+        (nested / ".env").write_text("ANTHROPIC_API_KEY=secret\n")
+        (nested / ".env.local").write_text("LOCAL=1\n")
+
+        # ACT
+        copy_gitignored_files(repo_root, mock_worktree)
+
+        # ASSERT
+        assert (mock_worktree / ".env").read_text() == "ROOT=1\n"
+        assert (mock_worktree / "pr-review" / ".env").read_text() == (
+            "ANTHROPIC_API_KEY=secret\n"
+        ), "nested .env should be copied to its relative path"
+        assert (mock_worktree / "pr-review" / ".env.local").read_text() == "LOCAL=1\n"
+
+    def test_prunes_heavy_dirs_when_walking_for_env(self, tmp_path, mock_worktree):
+        """Test that .env files inside pruned directories are skipped.
+
+        BEHAVIOR: The nested-env walk must not descend into .venv/node_modules/etc,
+        both for speed and to avoid copying dependency-tree env files.
+        """
+        # ARRANGE
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".gitignore").write_text(".env\n")
+        venv = repo_root / ".venv"
+        venv.mkdir()
+        (venv / ".env").write_text("SHOULD_NOT_COPY=1\n")
+
+        # ACT
+        copy_gitignored_files(repo_root, mock_worktree)
+
+        # ASSERT
+        assert not (mock_worktree / ".venv" / ".env").exists(), (
+            ".env inside a pruned dir must not be copied"
+        )
+
     def test_handles_copy_errors_silently(self, tmp_path, mock_worktree):
         """Test that copy errors don't crash worktree creation.
 

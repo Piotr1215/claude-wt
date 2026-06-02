@@ -187,6 +187,54 @@ def copy_gitignored_files(repo_root: Path, wt_path: Path) -> None:
     for pattern in patterns:
         _try_copy_pattern(pattern, repo_root, wt_path)
 
+    # Bare ignore patterns like ".env" match at every level in git, but the
+    # per-pattern copy above resolves them only at the repo root. Secrets often
+    # live in a subdirectory (e.g. pr-review/.env), so copy nested env files too,
+    # preserving their relative path.
+    _copy_nested_env_files(repo_root, wt_path)
+
+
+# Directories never worth walking into when hunting for nested config: build
+# output, dependency trees, virtualenvs, caches, and the worktrees dir itself.
+_ENV_WALK_PRUNE = {
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    "target",
+    ".next",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "htmlcov",
+    "claude-wt-worktrees",
+}
+
+
+def _copy_nested_env_files(repo_root: Path, wt_path: Path) -> None:
+    """Copy `.env` (and `.env.*`) files from any depth into the worktree.
+
+    `copy_gitignored_files` resolves gitignore patterns only at the repo root, so a
+    secret in a subdirectory is missed. Walk the tree, pruning heavy/irrelevant
+    directories, and copy each env file to its matching relative path. Silent
+    failure, matching the rest of this module.
+    """
+    import os
+
+    try:
+        for dirpath, dirnames, filenames in os.walk(repo_root):
+            dirnames[:] = [d for d in dirnames if d not in _ENV_WALK_PRUNE]
+            for name in filenames:
+                if name == ".env" or name.startswith(".env."):
+                    source = Path(dirpath) / name
+                    _try_copy_path(source, wt_path / source.relative_to(repo_root))
+    except Exception:
+        pass  # Silent failure
+
 
 def _parse_gitignore(gitignore_file: Path) -> list[str]:
     """Parse gitignore file and return list of patterns."""
