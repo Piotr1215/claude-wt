@@ -243,3 +243,48 @@ class TestTmuxIntegration:
             "git fetch" in cmd or " fetch " in cmd for cmd in git_commands
         ), f"Git fetch found in commands: {git_commands}"
         assert any("switch" in cmd for cmd in git_commands)
+
+
+class TestSpawnModelSelection:
+    """CLAUDE_SPAWN_MODEL -> --model on the launched claude command.
+
+    __nats_watcher.sh (shortcut-4 model picker) exports CLAUDE_SPAWN_MODEL when
+    dispatching a brief-driven worker through claude-wt. _send_claude_command
+    turns it into a --model flag that __claude_with_monitor.sh forwards to claude.
+    """
+
+    def _sent_command(self, model_env):
+        from pathlib import Path
+
+        from claude_wt import tmux_launcher
+
+        sent = {}
+
+        def fake_run(cmd, *a, **k):
+            if cmd[:2] == ["tmux", "send-keys"]:
+                sent["cmd"] = cmd[4]
+            return Mock(returncode=0)
+
+        env = dict(os.environ)
+        env.pop("CLAUDE_SPAWN_MODEL", None)
+        if model_env is not None:
+            env["CLAUDE_SPAWN_MODEL"] = model_env
+
+        with patch.object(tmux_launcher.subprocess, "run", side_effect=fake_run):
+            with patch.dict(os.environ, env, clear=True):
+                tmux_launcher._send_claude_command(
+                    "sess", Path("/tmp/wt"), "/ops-autonomous-worker DOC-1"
+                )
+        return sent.get("cmd", "")
+
+    def test_no_env_means_no_model_flag(self):
+        cmd = self._sent_command(None)
+        assert "--model" not in cmd
+        assert '--dangerously-skip-permissions -- "/ops-autonomous-worker DOC-1"' in cmd
+
+    def test_model_env_appends_flag_before_prompt(self):
+        cmd = self._sent_command("fable")
+        assert "--dangerously-skip-permissions --model fable -- " in cmd
+
+    def test_blank_env_is_treated_as_unset(self):
+        assert "--model" not in self._sent_command("   ")

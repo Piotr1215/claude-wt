@@ -5,6 +5,7 @@ Reusable launcher for all workflows (Linear, PR, custom).
 Each function has single responsibility with low cyclomatic complexity.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -72,9 +73,16 @@ def _send_claude_command(
     claude_launcher = "/home/decoder/.claude/scripts/__claude_with_monitor.sh"
     kubeconfig = "/home/decoder/dev/homelab/kubeconfig"
 
+    # Model override: __nats_watcher.sh (shortcut-4 model picker) exports
+    # CLAUDE_SPAWN_MODEL. Forward it as --model so the brief-driven worker runs on
+    # the chosen model; empty/unset means no flag (session default).
+    # __claude_with_monitor.sh passes --model straight through to claude.
+    model = os.environ.get("CLAUDE_SPAWN_MODEL", "").strip()
+    model_flag = f"--model {model} " if model else ""
+
     claude_cmd = (
         f"KUBECONFIG={kubeconfig} {claude_launcher} "
-        f'--dangerously-skip-permissions -- "{initial_prompt}"'
+        f'--dangerously-skip-permissions {model_flag}-- "{initial_prompt}"'
     )
 
     subprocess.run(
