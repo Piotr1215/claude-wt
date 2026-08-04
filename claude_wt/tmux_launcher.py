@@ -21,6 +21,16 @@ def launch_claude_in_tmux(
     Creates new session if needed, reuses existing session if present.
     Always sends Claude command to the session.
     """
+    runner = os.environ.get("AGENT_RUNNER", "claude").strip() or "claude"
+    if runner not in {"claude", "codex"}:
+        raise ValueError("AGENT_RUNNER must be claude or codex")
+
+    if runner == "codex":
+        _launch_codex_with_shared_spawn(session_name, worktree_path, initial_prompt)
+        if not detached:
+            _switch_to_session(session_name)
+        return
+
     session_exists = _check_session_exists(session_name)
 
     if not session_exists:
@@ -29,6 +39,51 @@ def launch_claude_in_tmux(
     _send_claude_command(session_name, worktree_path, initial_prompt)
     if not detached:
         _switch_to_session(session_name)
+
+
+def _launch_codex_with_shared_spawn(
+    session_name: str, worktree_path: Path, initial_prompt: str
+) -> None:
+    """Launch Codex through the same shell contract used by Gordon."""
+    spawn_script = "/home/decoder/.claude/scripts/__spawn_agent.sh"
+    command = [
+        spawn_script,
+        "--name",
+        session_name,
+        "--runner",
+        "codex",
+        "--cwd",
+        str(worktree_path),
+    ]
+
+    model = (
+        os.environ.get("AGENT_SPAWN_MODEL", "").strip()
+        or os.environ.get("CLAUDE_SPAWN_MODEL", "").strip()
+    )
+    if model:
+        command.extend(["--model", model])
+
+    command.extend(["--prompt", _codex_prompt(initial_prompt)])
+    subprocess.run(command, check=True)
+
+
+def _codex_prompt(initial_prompt: str) -> str:
+    """Translate Claude slash entrypoints into runner-neutral Codex tasks."""
+    autonomous_prefix = "/ops-autonomous-worker "
+    review_prefix = "/ops-pr-review "
+
+    if initial_prompt.startswith(autonomous_prefix):
+        issue_id = initial_prompt.removeprefix(autonomous_prefix).strip()
+        return (
+            f"Work autonomously on Linear issue {issue_id}. Load the issue and all "
+            "comments, read its triage brief, satisfy its acceptance criteria, "
+            "verify the result, and open a feature-branch PR when the task calls "
+            "for code."
+        )
+    if initial_prompt.startswith(review_prefix):
+        target = initial_prompt.removeprefix(review_prefix).strip()
+        return f"Review {target} autonomously using the GitHub review skill."
+    return initial_prompt
 
 
 def _check_session_exists(session_name: str) -> bool:

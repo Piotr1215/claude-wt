@@ -4,6 +4,8 @@ import os
 import sys
 from unittest.mock import Mock, patch
 
+import pytest
+
 # Add the parent directory to path to import claude_wt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -288,3 +290,53 @@ class TestSpawnModelSelection:
 
     def test_blank_env_is_treated_as_unset(self):
         assert "--model" not in self._sent_command("   ")
+
+
+class TestAgentRunnerSelection:
+    """Codex reuses the shared spawn shell while Claude stays unchanged."""
+
+    def test_codex_uses_shared_spawn_contract(self):
+        from pathlib import Path
+
+        from claude_wt import tmux_launcher
+
+        calls = []
+
+        def fake_run(cmd, *args, **kwargs):
+            calls.append(cmd)
+            return Mock(returncode=0)
+
+        env = {
+            "AGENT_RUNNER": "codex",
+            "AGENT_SPAWN_MODEL": "gpt-5.6-sol",
+        }
+        with patch.object(tmux_launcher.subprocess, "run", side_effect=fake_run):
+            with patch.dict(os.environ, env, clear=True):
+                tmux_launcher.launch_claude_in_tmux(
+                    "vcluster-docs-DOC-123",
+                    Path("/tmp/worktree"),
+                    "/ops-autonomous-worker DOC-123",
+                    detached=True,
+                )
+
+        spawn = next(
+            cmd for cmd in calls if "__spawn_agent.sh" in " ".join(map(str, cmd))
+        )
+        assert spawn[spawn.index("--runner") + 1] == "codex"
+        assert spawn[spawn.index("--model") + 1] == "gpt-5.6-sol"
+        assert spawn[spawn.index("--name") + 1] == "vcluster-docs-DOC-123"
+        assert spawn[spawn.index("--cwd") + 1] == "/tmp/worktree"
+        prompt = spawn[spawn.index("--prompt") + 1]
+        assert "Work autonomously on Linear issue DOC-123" in prompt
+        assert "/ops-autonomous-worker" not in prompt
+
+    def test_unknown_runner_is_rejected(self):
+        from pathlib import Path
+
+        from claude_wt import tmux_launcher
+
+        with patch.dict(os.environ, {"AGENT_RUNNER": "other"}, clear=True):
+            with pytest.raises(ValueError, match="AGENT_RUNNER"):
+                tmux_launcher.launch_claude_in_tmux(
+                    "session", Path("/tmp/worktree"), "task", detached=True
+                )

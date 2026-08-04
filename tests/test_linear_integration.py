@@ -470,7 +470,7 @@ class TestLinearIssueHandling:
         ]
         assert len(tmux_calls) >= 3  # has-session, new-session, send-keys
 
-    def test_uses_slash_command_for_linear_issue(
+    def test_uses_autonomous_worker_for_linear_issue(
         self,
         mock_subprocess,
         mock_worktree_base,
@@ -479,10 +479,11 @@ class TestLinearIssueHandling:
         mock_install_hook,
         mock_git_repo,
     ):
-        """Test Claude is launched with /ops-linear-issue slash command.
+        """Test Claude is launched with /ops-autonomous-worker.
 
-        BEHAVIOR: Linear issues should trigger /ops-linear-issue {id} command,
-        not plain text prompts. This enables Claude's Linear integration workflow.
+        BEHAVIOR: Linear issues trigger the autonomous worker entrypoint rather
+        than a plain prompt, so the worker completes the triaged scope without
+        waiting for a second go-ahead.
         """
         # ARRANGE
         mock_subprocess.side_effect = [
@@ -534,8 +535,8 @@ class TestLinearIssueHandling:
         claude_cmd = " ".join(send_keys_args)
 
         # Verify slash command is used (not plain text)
-        assert "/ops-linear-issue DOC-999" in claude_cmd, (
-            f"Expected '/ops-linear-issue DOC-999' in command, got: {claude_cmd}"
+        assert "/ops-autonomous-worker DOC-999" in claude_cmd, (
+            f"Expected '/ops-autonomous-worker DOC-999' in command, got: {claude_cmd}"
         )
         assert "Working on issue" not in claude_cmd, (
             "Should use slash command, not plain text description"
