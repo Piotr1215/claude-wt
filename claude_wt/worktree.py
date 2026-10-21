@@ -10,11 +10,11 @@ from rich.table import Table
 
 from .core import (
     BaseResolutionError,
-    fresh_default_base,
-    has_origin,
     copy_gitignored_files,
     create_worktree_context,
+    fresh_default_base,
     get_worktree_base,
+    has_origin,
     install_branch_protection_hook,
     is_claude_wt_worktree,
 )

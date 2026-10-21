@@ -133,7 +133,9 @@ class TestLinearIssueHandling:
 
         # ASSERT - Slashes should be replaced with dashes
         assert exc_info.value.code == 0
-        branch_create_call = mock_subprocess.call_args_list[3]  # fetch now lives in fresh_default_base
+        branch_create_call = mock_subprocess.call_args_list[
+            3
+        ]  # fetch now lives in fresh_default_base
         branch_cmd = " ".join(branch_create_call[0][0])
         # Slash in issue ID should be converted to dash
         assert (
@@ -179,7 +181,9 @@ class TestLinearIssueHandling:
         captured = capsys.readouterr()
         assert "doc-123" in captured.out.lower()
         # Verify timestamp format in branch name (YYYYMMDD-HHMMSS)
-        branch_create_call = mock_subprocess.call_args_list[3]  # fetch now lives in fresh_default_base
+        branch_create_call = mock_subprocess.call_args_list[
+            3
+        ]  # fetch now lives in fresh_default_base
         branch_cmd = " ".join(branch_create_call[0][0])
         # Should contain year (20XX)
         assert any(f"20{y}" in branch_cmd for y in range(20, 30))
