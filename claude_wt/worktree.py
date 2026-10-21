@@ -9,9 +9,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .core import (
+    BaseResolutionError,
     copy_gitignored_files,
     create_worktree_context,
+    fresh_default_base,
     get_worktree_base,
+    has_origin,
     install_branch_protection_hook,
     is_claude_wt_worktree,
 )
@@ -267,23 +270,30 @@ def create_new_worktree(
     )
     repo_root = Path(result.stdout.strip())
 
-    # Get source branch (default to current branch)
+    # Source branch: an explicit --branch wins. Otherwise the remote default as
+    # fetched now, never whatever the main checkout happens to have checked out.
     if branch:
         source_branch = branch
-    else:
-        result = subprocess.run(
+    elif not has_origin(repo_root):
+        # Local-only repo: its current branch is its own default.
+        source_branch = subprocess.run(
             ["git", "-C", str(repo_root), "branch", "--show-current"],
             capture_output=True,
             text=True,
             check=True,
-        )
-        source_branch = result.stdout.strip()
+        ).stdout.strip()
+    else:
+        try:
+            source_branch = fresh_default_base(repo_root)
+        except BaseResolutionError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            raise SystemExit(1)
 
     # Check if source_branch is a remote reference (e.g., origin/branch-name)
     is_remote_ref = "/" in source_branch
 
-    # Optionally sync with origin (skip by default for speed)
-    if pull:
+    # Optionally sync an explicit local source branch with origin
+    if pull and branch:
         console.print("[cyan]Fetching latest changes...[/cyan]")
         subprocess.run(["git", "-C", str(repo_root), "fetch", "origin"], check=True)
         if not is_remote_ref:
@@ -296,13 +306,12 @@ def create_new_worktree(
                 check=True,
             )
         console.print("[green]✓ Synced with origin[/green]")
-    else:
+    elif branch and not is_remote_ref:
         # Just ensure we're on the source branch (fast) - skip if remote ref
-        if not is_remote_ref:
-            subprocess.run(
-                ["git", "-C", str(repo_root), "switch", "--quiet", source_branch],
-                check=True,
-            )
+        subprocess.run(
+            ["git", "-C", str(repo_root), "switch", "--quiet", source_branch],
+            check=True,
+        )
 
     # Generate worktree branch name
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

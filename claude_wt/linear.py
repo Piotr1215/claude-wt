@@ -6,8 +6,10 @@ import sys
 from datetime import datetime
 
 from .core import (
+    BaseResolutionError,
     copy_gitignored_files,
     create_worktree_context,
+    fresh_default_base,
     get_worktree_base,
     install_branch_protection_hook,
 )
@@ -168,13 +170,9 @@ def handle_linear_issue(
 
         # Create worktree if needed
         if not worktree_path:
-            # Ensure we're on main and up to date
-            # Fetch latest from origin - no need to checkout main!
-            subprocess.run(
-                ["git", "-C", str(repo_root), "fetch", "origin"],
-                check=True,
-                capture_output=True,
-            )
+            # Fetch origin and resolve its default branch from the remote. A
+            # failure aborts: a stale or guessed base is the bug this prevents.
+            base_ref = fresh_default_base(repo_root)
 
             # Check if branch exists
             result = subprocess.run(
@@ -190,9 +188,10 @@ def handle_linear_issue(
             )
 
             if result.returncode != 0:
-                # Create new branch from origin/main (not local main!)
+                # New branch off the fresh remote default (not local main, not
+                # a hardcoded origin/main)
                 subprocess.run(
-                    ["git", "-C", str(repo_root), "branch", branch_name, "origin/main"],
+                    ["git", "-C", str(repo_root), "branch", branch_name, base_ref],
                     check=True,
                 )
 
@@ -230,11 +229,16 @@ def handle_linear_issue(
         # If session_name provided, use shared tmux/Claude launcher
         if session_name:
             initial_prompt = f"/ops-autonomous-worker {issue_id}"
-            launch_claude_in_tmux(session_name, worktree_path, initial_prompt, detached=not interactive)
+            launch_claude_in_tmux(
+                session_name, worktree_path, initial_prompt, detached=not interactive
+            )
 
         # Successfully completed - worktree path already printed to stdout
         sys.exit(0)
 
+    except BaseResolutionError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        raise SystemExit(1)
     except subprocess.CalledProcessError as e:
         print(f"Error: {e}", file=sys.stderr)
         raise SystemExit(1)
