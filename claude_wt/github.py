@@ -11,6 +11,7 @@ from rich.panel import Panel
 from .core import (
     copy_gitignored_files,
     create_worktree_context,
+    fast_forward_to_origin,
     get_worktree_base,
     install_branch_protection_hook,
 )
@@ -170,6 +171,8 @@ def handle_pr_interactive(pr_number: str = "", query: str = ""):
                 check=True,
                 capture_output=True,
             )
+            # The local branch may predate the fetch above; catch it up.
+            fast_forward_to_origin(wt_path, pr_branch)
 
         # Create worktree-specific CLAUDE.md
         create_worktree_context(wt_path, f"PR #{pr_number}", pr_branch, repo_root)
@@ -335,6 +338,8 @@ def handle_pr_noninteractive(
                 check=True,
                 capture_output=True,
             )
+            # The local branch may predate the fetch above; catch it up.
+            fast_forward_to_origin(wt_path, pr_branch)
             print(f"Created worktree at {wt_path}", file=sys.stderr)
         else:
             # Worktree exists, pull latest

@@ -237,14 +237,16 @@ class TestTmuxIntegration:
                         ):
                             new(name="no-pull-test", pull=False)
 
-        # Verify that git pull and fetch were not called but switch was
+        # Verify that git pull and fetch were not called
         assert not any("git pull" in cmd or " pull " in cmd for cmd in git_commands), (
             f"Git pull found in commands: {git_commands}"
         )
         assert not any(
             "git fetch" in cmd or " fetch " in cmd for cmd in git_commands
         ), f"Git fetch found in commands: {git_commands}"
-        assert any("switch" in cmd for cmd in git_commands)
+        # No --branch: the base is the fresh remote default, so the main
+        # checkout is never switched.
+        assert not any("switch" in cmd for cmd in git_commands)
 
 
 class TestSpawnModelSelection:

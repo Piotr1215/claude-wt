@@ -78,8 +78,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git show-ref --verify (branch doesn't exist)
             Mock(returncode=1),
             # git branch (create from origin/main)
@@ -96,8 +94,8 @@ class TestLinearIssueHandling:
         assert exc_info.value.code == 0
         # Verify branch was created with normalized name from origin/main
         branch_create_call = mock_subprocess.call_args_list[
-            4
-        ]  # Adjusted index (removed checkout+pull)
+            3
+        ]  # fetch now lives in fresh_default_base
         assert "doc-975" in " ".join(branch_create_call[0][0])
         assert "origin/main" in " ".join(branch_create_call[0][0])
 
@@ -121,8 +119,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git show-ref --verify (branch doesn't exist)
             Mock(returncode=1),
             # git branch (create from origin/main)
@@ -137,7 +133,7 @@ class TestLinearIssueHandling:
 
         # ASSERT - Slashes should be replaced with dashes
         assert exc_info.value.code == 0
-        branch_create_call = mock_subprocess.call_args_list[4]  # Adjusted index
+        branch_create_call = mock_subprocess.call_args_list[3]  # fetch now lives in fresh_default_base
         branch_cmd = " ".join(branch_create_call[0][0])
         # Slash in issue ID should be converted to dash
         assert (
@@ -165,8 +161,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a (no existing branches)
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git show-ref --verify (branch doesn't exist)
             Mock(returncode=1),
             # git branch (create from origin/main)
@@ -185,7 +179,7 @@ class TestLinearIssueHandling:
         captured = capsys.readouterr()
         assert "doc-123" in captured.out.lower()
         # Verify timestamp format in branch name (YYYYMMDD-HHMMSS)
-        branch_create_call = mock_subprocess.call_args_list[4]  # Adjusted index
+        branch_create_call = mock_subprocess.call_args_list[3]  # fetch now lives in fresh_default_base
         branch_cmd = " ".join(branch_create_call[0][0])
         # Should contain year (20XX)
         assert any(f"20{y}" in branch_cmd for y in range(20, 30))
@@ -211,8 +205,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a (existing branch)
             Mock(stdout=f"  {existing_branch}\n", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git checkout main
             Mock(returncode=0),
             # git pull --ff-only
@@ -259,8 +251,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git checkout main
             Mock(returncode=0),
             # git pull --ff-only
@@ -335,8 +325,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git checkout main
             Mock(returncode=0),
             # git pull --ff-only
@@ -379,8 +367,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a (with existing branch to trigger picker)
             Mock(stdout="  doc-123/existing\n", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git checkout main
             Mock(returncode=0),
             # git pull --ff-only
@@ -432,8 +418,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git checkout main
             Mock(returncode=0),
             # git pull --ff-only
@@ -491,8 +475,6 @@ class TestLinearIssueHandling:
             Mock(stdout=str(mock_git_repo), returncode=0),
             # git branch -a
             Mock(stdout="", returncode=0),
-            # git fetch origin
-            Mock(returncode=0),
             # git checkout main
             Mock(returncode=0),
             # git pull --ff-only

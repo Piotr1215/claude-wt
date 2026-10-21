@@ -3,7 +3,94 @@
 Shared functions for path management, git operations, and worktree detection.
 """
 
+import os
+import subprocess
 from pathlib import Path
+
+
+class BaseResolutionError(RuntimeError):
+    """The remote default branch could not be fetched or resolved."""
+
+
+def fresh_default_base(repo_root: Path) -> str:
+    """Fetch origin and return ``origin/<default>`` as the remote names it now.
+
+    Every new worktree must start from the freshly fetched remote default
+    branch, never a local branch, the main checkout's HEAD, or a hardcoded
+    ``origin/main``. The remote is asked each time (``ls-remote --symref``)
+    because ``refs/remotes/origin/HEAD`` goes stale when a default is renamed
+    and is absent on repos whose origin was added after the clone.
+
+    Raises BaseResolutionError on any failure; callers must abort rather than
+    fall back to a stale ref.
+    """
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(repo_root), *args],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+
+    fetched = git("fetch", "--quiet", "origin")
+    if fetched.returncode != 0:
+        raise BaseResolutionError(
+            f"git fetch origin failed in {repo_root}: {fetched.stderr.strip()}"
+        )
+    head = git("ls-remote", "--symref", "origin", "HEAD")
+    default = ""
+    if head.returncode == 0:
+        for line in head.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == "ref:":
+                default = parts[1].removeprefix("refs/heads/")
+                break
+    if not default:
+        raise BaseResolutionError(f"origin of {repo_root} names no default branch")
+    ref = f"refs/remotes/origin/{default}"
+    if git("rev-parse", "-q", "--verify", f"{ref}^{{commit}}").returncode != 0:
+        # Narrow fetch refspec: fetch the default by name.
+        by_name = git("fetch", "--quiet", "origin", f"+refs/heads/{default}:{ref}")
+        if by_name.returncode != 0:
+            raise BaseResolutionError(
+                f"could not fetch origin/{default} in {repo_root}: "
+                f"{by_name.stderr.strip()}"
+            )
+    git("remote", "set-head", "origin", default)
+    return f"origin/{default}"
+
+
+def has_origin(repo_root: Path) -> bool:
+    """True when the repo has an ``origin`` remote (local-only repos do not)."""
+    return (
+        subprocess.run(
+            ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def fast_forward_to_origin(wt_path: Path, branch: str) -> None:
+    """Bring a just-created PR worktree up to ``origin/<branch>`` when behind.
+
+    A PR worktree checks out the PR branch itself, but the local branch may be
+    older than what was just fetched. Fast-forward only: a diverged branch
+    holds someone's work and is left alone.
+    """
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(wt_path),
+            "merge",
+            "--ff-only",
+            "--quiet",
+            f"origin/{branch}",
+        ],
+        capture_output=True,
+    )
 
 
 def get_worktree_base(repo_root: Path) -> Path:
@@ -34,11 +121,28 @@ def is_claude_wt_worktree(worktree: dict) -> bool:
     return branch_name.startswith("claude-wt-") or "-worktrees/claude-wt-" in wt_path
 
 
+def _is_tracked(wt_path: Path, name: str) -> bool:
+    """True when ``name`` is tracked by git in the worktree."""
+    return (
+        subprocess.run(
+            ["git", "-C", str(wt_path), "ls-files", "--error-unmatch", name],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
 def create_worktree_context(
     wt_path: Path, issue_id: str, branch_name: str, repo_root: Path
 ):
     """Create a CLAUDE.md file specific to this worktree."""
     claude_md = wt_path / "CLAUDE.md"
+
+    # A repo's own CLAUDE.md is already in a fresh checkout and stays. Overwriting
+    # it left every such worktree with a 100+ line modification to a tracked file,
+    # which a `git add -A` then committed into the PR (DEVOPS-1664).
+    if _is_tracked(wt_path, "CLAUDE.md"):
+        return
 
     content = f"""# Worktree Context
 
